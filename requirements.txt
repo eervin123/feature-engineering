@@ -1,0 +1,5 @@
+vectorbt
+pandas
+numpy
+matplotlib
+backtesting
