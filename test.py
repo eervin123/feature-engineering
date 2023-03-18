@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Load data into a Pandas DataFrame
 df = pd.read_csv('btc.csv', parse_dates=True, index_col=0)
+model_store = 'models/'
 
 # Define parameters to optimize using grid search
 param_grid = {
@@ -74,48 +75,64 @@ with tqdm_joblib(tqdm(desc="Fitting Models", total=len(best_forecasts_lengths)))
     models = dict(Parallel(n_jobs=-1)(
         delayed(fit_forecast_model)(forecast, length, df.copy()) for forecast, length in best_forecasts_lengths
     ))
+
+
 # Evaluate the model performance on the validation set
 logging.info('Evaluating model performance...')
 scores = {}
+length_scores = {}
 for forecast, model in tqdm(models.items()):
-    length = best_params.loc[best_params['forecast'] == forecast, 'length'].iloc[0]
+    length = best_params.loc[best_params['forecast'] == forecast, 'length']
     df['signal'] = (df['Close'] / df.ta.sma(length=length, append=True)) - 1
-    full_y = df['Close'].shift(-forecast).pct_change(forecast)
-    Xy = pd.concat([df['signal'], full_y], axis=1).dropna()
-    _, X_val, _, y_val = train_test_split(Xy.iloc[:, :-1], Xy.iloc[:, -1], test_size=0.2, shuffle=False)
+    y_val = df['Close'].shift(-forecast).pct_change(forecast)[-len(y_val):]
+    X_val = df['signal'][-len(y_val):]
     X_val = X_val.values.reshape(-1, 1)
     y_val = y_val.values.reshape(-1, 1)
     y_pred = model.predict(X_val)
     score = mean_squared_error(y_pred, y_val)
     scores[forecast] = score
 
+    if length not in length_scores:
+        length_scores[length] = {'mse_sum': 0, 'count': 0}
+    length_scores[length]['mse_sum'] += score
+    length_scores[length]['count'] += 1
 
+# Calculate the average MSE for each SMA length
+for length, data in length_scores.items():
+    data['avg_mse'] = data['mse_sum'] / data['count']
+
+# Determine the SMA length with the lowest average MSE
+best_sma_length = min(length_scores, key=lambda x: length_scores[x]['avg_mse'])
+logging.info(f"Best SMA length: {best_sma_length}")
 
 print('MSE Scores:', scores)
-
-# Plot MSE scores for each forecast period
-plt.plot(scores.keys(), scores.values(), marker='o')
-plt.xlabel('Forecast Period')
-plt.ylabel('Mean Squared Error')
-plt.title('Model Performance')
-plt.show()
 
 # Save the models to disk
 logging.info('Saving models to disk...')
 for forecast, model in models.items():
-    joblib.dump(model, f'model_forecast_{forecast}.joblib')
+    joblib.dump(model, model_store+f'model_forecast_{forecast}.joblib')
+    
+# Calculate the RMSE scores for each forecast period
+rmse_scores = {forecast: np.sqrt(score) for forecast, score in scores.items()}
 
-rmse_scores = {k: np.sqrt(v) for k, v in scores.items()}
+# Calculate the RMSE scores for each SMA length
+length_rmse_scores = {length: np.sqrt(data['avg_mse']) for length, data in length_scores.items()}
+
+logging.info('RMSE Scores:')
+logging.info(rmse_scores)
+logging.info('RMSE Scores per SMA length:')
+logging.info(length_rmse_scores)
+
 print('RMSE Scores:', rmse_scores)
+
 
 # Define the prediction threshold
 threshold = 0.001  # This is the percentage variance that we would consider a correct prediction
 logging.info(f'Using a prediction threshold of {threshold} to determine accuracy...')
 # Calculate prediction accuracy for each forecast period
 accuracy_scores = {}
+df['signal'] = (df['Close'] / df.ta.sma(length=best_sma_length, append=True)) - 1
 for forecast, model in models.items():
-    length = best_params.loc[best_params['forecast'] == forecast, 'length'].iloc[0]
-    df['signal'] = (df['Close'] / df.ta.sma(length=length, append=True)) - 1
     X_val = df['signal'][-len(y_val):]
     y_val = df['Close'].shift(-forecast).pct_change(forecast)[-len(y_val):]
     X_val = X_val.values.reshape(-1, 1)
@@ -129,15 +146,7 @@ for forecast, model in models.items():
 
 # Print the prediction accuracy for each forecast period
 for forecast, accuracy in accuracy_scores.items():
-    print(f"The {forecast}-minute forecast model is correct {accuracy:.2f}% of the time at a tolerance of {threshold:.2f}%.")
-
-# Plot RMSE scores for each forecast period
-plt.figure()
-plt.plot(scores.keys(), scores.values(), marker='o')
-plt.xlabel('Forecast Period')
-plt.ylabel('Mean Squared Error')
-plt.title('Model Performance (RMSE)')
-plt.show()
+    print(f"The {forecast}-minute forecast model is correct {accuracy:.4f}% of the time at a tolerance of {threshold:.4f}%.")
 
 # Plot accuracy scores for each forecast period
 plt.figure()
@@ -146,3 +155,21 @@ plt.xlabel('Forecast Period')
 plt.ylabel('Accuracy (%)')
 plt.title('Model Performance (Accuracy)')
 plt.show()
+
+# Plot MSE scores for each forecast period
+plt.plot(scores.keys(), scores.values(), marker='o')
+plt.xlabel('Forecast Period')
+plt.ylabel('Mean Squared Error')
+plt.title('Model Performance')
+plt.show()
+
+# Plot RMSE scores for each forecast period
+plt.figure()
+plt.plot(rmse_scores.keys(), rmse_scores.values(), marker='o')
+plt.xlabel('Forecast Period')
+plt.ylabel('Mean Squared Error')
+plt.title('Model Performance (RMSE)')
+plt.show()
+
+
+
