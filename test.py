@@ -1,13 +1,17 @@
 import pandas as pd
 import pandas_ta as ta
+from pandas import DataFrame
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 import logging
 import matplotlib.pyplot as plt
-import joblib # for saving models
+import joblib  # for saving models
 import numpy as np
+from joblib import Parallel, delayed
+from tqdm_joblib import tqdm_joblib
+from typing import List, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,22 +29,19 @@ param_grid = {
 df.ta.sma(append=True)
 
 # Define a function to optimize the parameters for the sma() function
-def optimize_sma_params(df, param_grid):
-    results = []
-    for length in param_grid['length']:
-        for forecast in param_grid['forecast']:
-            # Convert the forecast parameter to a timedelta object
-            df[f'forecast_{forecast}'] = df['Close'].shift(-forecast).pct_change(forecast)
-            # Generate technical analysis features using pandas_ta with current parameters
-            df['signal'] = (df['Close'] / df.ta.sma(length=length, append=True)) - 1
-            # Drop NaN values
-            df.dropna(inplace=True)
-            # Calculate the mean squared error of the signal column compared to each of the target columns
-            error = mean_squared_error(df['signal'], df[f'forecast_{forecast}'])
-            # Append the results to a list   
-            results.append({'length': length, 'forecast': forecast, 'error': error})
-    return pd.DataFrame(results)
+# Utilize joblib to parallelize the optimization process
+def optimize_sma_params_single(length, forecast, df):
+    df[f'forecast_{forecast}'] = df['Close'].shift(-forecast).pct_change(forecast)
+    df['signal'] = (df['Close'] / ta.sma(df['Close'], length=length)) - 1
+    df.dropna(inplace=True)
+    error = mean_squared_error(df['signal'], df[f'forecast_{forecast}'])
+    return {'length': length, 'forecast': forecast, 'error': error}
 
+def optimize_sma_params(df, param_grid):
+    results = Parallel(n_jobs=-1)(delayed(optimize_sma_params_single)(length, forecast, df.copy())
+                                   for length in param_grid['length']
+                                   for forecast in param_grid['forecast'])
+    return pd.DataFrame(results)
 # Optimize the SMA parameters
 logging.info('Optimizing SMA parameters...')
 results = optimize_sma_params(df, param_grid)
@@ -48,11 +49,10 @@ results = optimize_sma_params(df, param_grid)
 # Find the parameters with the lowest error for each forecast period
 best_params = results.sort_values(['forecast', 'error']).groupby('forecast').first().reset_index()
 
-# Fit a Random Forest model with the best parameters for each forecast period
-models = {}
-for forecast in param_grid['forecast']:
-    length = best_params.loc[best_params['forecast'] == forecast, 'length'].iloc[0]
-    df['signal'] = (df['Close'] / df.ta.sma(length=length, append=True)) - 1
+
+def fit_forecast_model(forecast: int, length: int, df: DataFrame) -> Tuple[int, RandomForestRegressor]:
+    logging.info(f'Fitting model for forecast {forecast} with parameters: length={length}')
+    df['signal'] = (df['Close'] / ta.sma(df['Close'], length=length)) - 1
     y = df['Close'].shift(-forecast).pct_change(forecast)
     Xy = pd.concat([df['signal'], y], axis=1).dropna()
     X_train, X_val, y_train, y_val = train_test_split(Xy.iloc[:, :-1], Xy.iloc[:, -1], test_size=0.2, shuffle=False)
@@ -60,23 +60,36 @@ for forecast in param_grid['forecast']:
     X_val = X_val.values.reshape(-1, 1)
     y_train = y_train.values.ravel()
     y_val = y_val.values.ravel()
-    logging.info(f'Fitting model for forecast {forecast} with parameters: length={length}')
+    
     model = RandomForestRegressor(random_state=42)
     model.fit(X_train, y_train)
-    models[forecast] = model
+    return forecast, model
 
+# Fit a Random Forest model with the best parameters for each forecast period
+logging.info('Fitting Random Forest models...')
+best_forecasts_lengths: List[Tuple[int, int]] = [(forecast, best_params.loc[best_params['forecast'] == forecast, 'length'].iloc[0]) 
+                           for forecast in param_grid['forecast']]
+
+with tqdm_joblib(tqdm(desc="Fitting Models", total=len(best_forecasts_lengths))) as progress_bar:
+    models = dict(Parallel(n_jobs=-1)(
+        delayed(fit_forecast_model)(forecast, length, df.copy()) for forecast, length in best_forecasts_lengths
+    ))
 # Evaluate the model performance on the validation set
+logging.info('Evaluating model performance...')
 scores = {}
 for forecast, model in tqdm(models.items()):
     length = best_params.loc[best_params['forecast'] == forecast, 'length'].iloc[0]
     df['signal'] = (df['Close'] / df.ta.sma(length=length, append=True)) - 1
-    X_val = df['signal'][-len(y_val):]
-    y_val = df['Close'].shift(-forecast).pct_change(forecast)[-len(y_val):]
+    full_y = df['Close'].shift(-forecast).pct_change(forecast)
+    Xy = pd.concat([df['signal'], full_y], axis=1).dropna()
+    _, X_val, _, y_val = train_test_split(Xy.iloc[:, :-1], Xy.iloc[:, -1], test_size=0.2, shuffle=False)
     X_val = X_val.values.reshape(-1, 1)
     y_val = y_val.values.reshape(-1, 1)
     y_pred = model.predict(X_val)
     score = mean_squared_error(y_pred, y_val)
     scores[forecast] = score
+
+
 
 print('MSE Scores:', scores)
 
@@ -88,16 +101,16 @@ plt.title('Model Performance')
 plt.show()
 
 # Save the models to disk
+logging.info('Saving models to disk...')
 for forecast, model in models.items():
     joblib.dump(model, f'model_forecast_{forecast}.joblib')
 
 rmse_scores = {k: np.sqrt(v) for k, v in scores.items()}
 print('RMSE Scores:', rmse_scores)
 
-
 # Define the prediction threshold
-threshold = 0.001 # This is the percentage variance that we would consider a correct prediction
-
+threshold = 0.001  # This is the percentage variance that we would consider a correct prediction
+logging.info(f'Using a prediction threshold of {threshold} to determine accuracy...')
 # Calculate prediction accuracy for each forecast period
 accuracy_scores = {}
 for forecast, model in models.items():
@@ -117,8 +130,6 @@ for forecast, model in models.items():
 # Print the prediction accuracy for each forecast period
 for forecast, accuracy in accuracy_scores.items():
     print(f"The {forecast}-minute forecast model is correct {accuracy:.2f}% of the time at a tolerance of {threshold:.2f}%.")
-
-import matplotlib.pyplot as plt
 
 # Plot RMSE scores for each forecast period
 plt.figure()
