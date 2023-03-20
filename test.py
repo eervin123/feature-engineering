@@ -52,7 +52,7 @@ def evaluate_sma_length(sma_length, df, models, threshold):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Load data into a Pandas DataFrame
-df = pd.read_csv('btc.csv', parse_dates=True, index_col=0)
+df = pd.read_csv('data/btc.csv', parse_dates=True, index_col=0)
 model_store = 'models/'
 os.makedirs(model_store, exist_ok=True) # create the models directory if it doesn't exist
 

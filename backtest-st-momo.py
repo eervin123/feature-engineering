@@ -17,7 +17,7 @@ data = pd.read_csv('data/btc.csv', index_col=0, parse_dates=True)
 data = data[['Close', 'Volume']]
 
 # Create an indicator of the EMA of the close price
-ema1_period = 10000
+ema1_period = 20000
 ema2_period = 5000
 data.ta.ema(close='Close', length=ema1_period, append=True)
 data.ta.ema(close='Close', length=ema2_period, append=True)
