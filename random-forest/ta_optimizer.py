@@ -1,3 +1,10 @@
+'''
+This file was built to simplify some of the technical analysis feature optimizations that are later used in my random forest algorithm. The class TechnicalIndicatorOptimizer is used to optimize the parameters of a technical indicator and then fit a random forest model to the indicator values. The class is initialized with the following parameters:
+This class was built early in my testing and playing around and leaves a LOT to be desired. I tried to document things pretty well.add()
+The file `run_optimizer.py` acompanies this and shows an example of how to use this class. Note, this is very slow and is probably incredibly inefficient.
+TODO: keep coming back to this as I build on the random forest algorithm and see if I can make this more efficient.
+'''
+
 import numpy as np
 import pandas as pd
 import talib as ta
