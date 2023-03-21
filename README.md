@@ -14,6 +14,9 @@ Personal repo where I test and explore various strategies and methods for genera
 ## Getting Started <a name = "getting_started"></a>
 
 Simply clone the repo and install the dependencies in the requirements.txt
+Many of the files use a `data` folder and a `models` folder. If they are not already in this repo, you can create them.
+In order to get you started with data, use the [get_data.ipynb](miscellaneous/get-data.ipynb) file to download yourself some data. Save some bitcoin 1m data in a csv file titled `/data/btc.csv`
+
 You might start with the random forest files which all start with the random forest examples.
 
 ### Prerequisites
