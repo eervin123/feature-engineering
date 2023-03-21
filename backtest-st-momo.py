@@ -19,22 +19,31 @@ data = data[['Close', 'Volume']]
 # Create an indicator of the EMA of the close price
 ema1_period = 20000
 ema2_period = 5000
+sma1_period = 10000
+sma2_period = 1000
 data.ta.ema(close='Close', length=ema1_period, append=True)
 data.ta.ema(close='Close', length=ema2_period, append=True)
+data.ta.sma(close='Close', length=sma1_period, append=True)
+data.ta.sma(close='Close', length=sma2_period, append=True)
 data.dropna(inplace=True)
 
 forecast = 30
 data['ema1_signal'] = (data['Close']/data[f'EMA_{ema1_period}'])-1
 data['ema2_signal'] = (data['Close']/data[f'EMA_{ema2_period}'])-1
+data['sma1_signal'] = (data['Close']/data[f'SMA_{sma1_period}'])-1
+data['sma2_signal'] = (data['Close']/data[f'SMA_{sma2_period}'])-1
 
 data[f'forecast_{forecast}'] = data['Close'].shift(-forecast).pct_change(forecast).dropna()
 data['future'] = data['Close'].shift(-forecast)
 data.dropna(inplace=True)
 
 df = data.copy()
-logging.info(f"Forecasting {forecast} mins fwd based on volume and two different ema signals: {ema1_period} and {ema2_period}")
+logging.info(f"Forecasting {forecast} mins fwd.")
+logging.info(f'Using {ema1_period} and {ema2_period} ema periods')
+logging.info(f'Using {sma1_period} and {sma2_period} sma periods')
+
 # Create the features (X) and target (y) data using numpy
-X = df[['ema1_signal', 'ema2_signal', 'Volume']].iloc[:-forecast].values # signal and volume
+X = df[['ema1_signal', 'ema2_signal', 'sma1_signal', 'sma2_signal', 'Volume']].iloc[:-forecast].values # signal and volume
 y = df['Close'].pct_change(forecast).dropna().iloc[:-forecast].values.reshape(-1, 1) # future
 
 # Split the data into training and testing sets and make sure they are the same length
@@ -47,7 +56,7 @@ model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
 model.fit(X, y.ravel())
 logging.info(f"Model fitted")
 y_val = df['Close'].shift(-forecast).pct_change(forecast).dropna() # future
-X_val = df[['ema1_signal', 'ema2_signal', 'Volume']][-len(y_val):] # signal and volume
+X_val = df[['ema1_signal', 'ema2_signal', 'sma1_signal', 'sma2_signal', 'Volume']][-len(y_val):] # signal and volume
 y_val = y_val.values.reshape(-1, 1) # reshape to 2D
 # make predictions
 logging.info(f"Making predictions")
