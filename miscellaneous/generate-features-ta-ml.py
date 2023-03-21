@@ -14,7 +14,7 @@ import pandas_ta as ta
 
 #%% Load Bitcoin CSV file
 def load_data():
-    file_path = 'data/btc.csv'
+    file_path = '../data/btc.csv'
     df = pd.read_csv(file_path, parse_dates=True, index_col=0)
     return df
 
@@ -26,6 +26,6 @@ def build_all_indicators():
 if __name__ == '__main__':
     df=build_all_indicators()
     print(df.tail(10))
-    df.to_csv('data/btc_with_all_features.csv')
+    df.to_csv('../data/btc_with_all_features.csv')
 
 
