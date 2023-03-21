@@ -7,6 +7,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from tqdm import tqdm
 import logging
+import pickle
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -117,3 +118,7 @@ def plot_scatter(y_val, y_pred, r2):
     plt.show()
 
 plot_scatter(y_val, y_pred, stats['r2'])
+
+# Save the model
+with open(f'models/rf_model_ema{ema1_period}-ema{ema2_period}-sma{sma1_period}-sma{sma2_period}-f{forecast}.pkl', 'wb') as file:
+    pickle.dump(model, file)
