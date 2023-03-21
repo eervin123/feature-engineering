@@ -27,9 +27,12 @@ If using conda create an environment and then activate the environment. You can 
 
 This repo is a collection of files and a constant work in progress. I am always testing and bouncing around on new files. I will try to keep the repo organized with good docstrings in each of the files, but I'm only human, so go easy on me.
 
-For a good starting point check out [The Random Forest Notebook](random-forest/random-forest-testing-momo-v1.2.ipynb)
+### For a good starting point check out
 
-- The file uses a random forest to build a model based on features that I generated on btc data. I tried to comment things pretty well. The model will then make predictions on the future price moves of bitcoin. Here is an example of the output. 
+[The Random Forest Notebook](random-forest/random-forest-testing-momo-v1.2.ipynb)
+
+- The file uses a random forest to build a model based on features that I generated on btc data. I tried to comment things pretty well. The model will then make predictions on the future price moves of bitcoin. 
+- Here is an example of the output. This is predicting 30 minutes into the future within +/-10bps.
 
         - For a threshold of: 0.001
         - MSE: 1.2729619990324905e-06
