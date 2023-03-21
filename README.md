@@ -22,6 +22,7 @@ In order to get you started with data, use the [get_data.ipynb](miscellaneous/ge
 You might start with the random forest files they are probably the cleanest and seem to be the most productive.
 
 ### Prerequisites
+
 If using conda create an environment and then activate the environment. You can either conda install each of the packages or install them from the requirements.txt file. Or, you can `pip install -r requirements.txt`
 
 [requirements.txt](requirements.txt) should have all you need.
