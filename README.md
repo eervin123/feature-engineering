@@ -17,7 +17,9 @@ Simply clone the repo and install the dependencies in the requirements.txt
 Many of the files use a `data` folder and a `models` folder. If they are not already in this repo, you can create them.
 In order to get you started with data, use the [get_data.ipynb](miscellaneous/get-data.ipynb) file to download yourself some data. Save some bitcoin 1m data in a csv file titled `/data/btc.csv`
 
-You might start with the random forest files which all start with the random forest examples.
+### Playing with the data
+
+You might start with the random forest files they are probably the cleanest and seem to be the most productive.
 
 ### Prerequisites
 If using conda create an environment and then activate the environment. You can either conda install each of the packages or install them from the requirements.txt file. Or, you can `pip install -r requirements.txt`
