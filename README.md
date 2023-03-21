@@ -14,9 +14,7 @@ Personal repo where I test and explore various strategies and methods for genera
 ## Getting Started <a name = "getting_started"></a>
 
 Simply clone the repo and install the dependencies in the requirements.txt
-You might start with the random forest files which all start with the random forest examples. 
-
-`
+You might start with the random forest files which all start with the random forest examples.
 
 ### Prerequisites
 If using conda create an environment and then activate the environment. You can either conda install each of the packages or install them from the requirements.txt file. Or, you can `pip install -r requirements.txt`
@@ -31,7 +29,7 @@ This repo is a collection of files and a constant work in progress. I am always 
 
 [The Random Forest Notebook](random-forest/random-forest-testing-momo-v1.2.ipynb)
 
-- The file uses a random forest to build a model based on features that I generated on btc data. I tried to comment things pretty well. The model will then make predictions on the future price moves of bitcoin. 
+- The file uses a random forest to build a model based on features that I generated on btc data. I tried to comment things pretty well. The model will then make predictions on the future price moves of bitcoin.
 - Here is an example of the output. This is predicting 30 minutes into the future within +/-10bps.
 
         - For a threshold of: 0.001
