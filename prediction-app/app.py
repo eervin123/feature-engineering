@@ -122,5 +122,7 @@ def plot_accuracy_chart(accuracy_df):
 plot_accuracy_chart(accuracy_df)
 # update the data
 st.write('Get new data')
-st.button('Refresh the Data')
-# load_preprocess_and_save_data()
+# Create a button to update the data 
+# TODO: Get this working. currently it kicks off an endless loop of data updates
+# st.button('Refresh the Data', on_click=load_preprocess_and_save_data())
+
