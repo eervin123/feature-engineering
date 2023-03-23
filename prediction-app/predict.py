@@ -59,7 +59,7 @@ def calculate_and_print_results(y_val, y_pred, threshold=0.0005, forecast_period
     correct_predictions = np.abs(y_pred - y_val.ravel()) <= threshold
     direction_correct = (np.sign(y_pred) == np.sign(y_val.ravel())).astype(int)
     direction_accuracy = direction_correct.mean() * 100
-    accuracy = np.mean(correct_predictions) * 100
+    precision_accuracy = np.mean(correct_predictions) * 100
     r2 = r2_score(y_val, y_pred)
 
     print(f"This model was trained on all of 2022 and \
@@ -70,7 +70,7 @@ def calculate_and_print_results(y_val, y_pred, threshold=0.0005, forecast_period
     print(f"MSE: {mse}")
     print(f"RMSE: {rmse:.4f}")
     # print accuracy within 4 decimal places
-    print(f"Precision Accuracy: {accuracy:.4f}% Percent of observations within the threshold of {threshold}")
+    print(f"Precision Accuracy: {precision_accuracy:.4f}% Percent of observations within the threshold of {threshold}")
     print(f"Direction Accuracy: {direction_accuracy:.4f}% This happened {direction_correct.sum()} times out of {len(direction_correct)}")
     print(f"R-squared: {r2:.4f}")
     results = {
@@ -78,7 +78,7 @@ def calculate_and_print_results(y_val, y_pred, threshold=0.0005, forecast_period
         'forecast period': forecast_period,
         'mse': mse,
         'rmse': rmse,
-        'accuracy': accuracy,
+        'precision_accuracy': precision_accuracy,
         'direction_accuracy': direction_accuracy,
         'r2': r2
     }

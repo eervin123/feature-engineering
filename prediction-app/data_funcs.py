@@ -77,7 +77,7 @@ def load_data_with_features(from_file: bool = True, start_date: str = '2023-01-0
     data = pd.read_csv(file_path, index_col=0, parse_dates=True)
     return data
 
-if __name__ == '__main__':
+def load_preprocess_and_save_data(load_data=load_data, preprocess_and_save_data=preprocess_and_save_data):
     file_path = 'data/btc.csv'
     # TODO: change the save file to be `btc_with_features.csv` and then load that file and append the new data to it
     # TODO: set it up to accept a symbol
@@ -96,3 +96,6 @@ if __name__ == '__main__':
     logging.info(f"After dropped duplicates func, index is now {data.index[0]} to {data.index[-1]}")
     # Preprocess and save the data
     data = preprocess_and_save_data(data, file_path)
+
+if __name__ == '__main__':
+    load_preprocess_and_save_data(load_data, preprocess_and_save_data)
