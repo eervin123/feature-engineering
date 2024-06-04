@@ -17,6 +17,8 @@ Simply clone the repo and install the dependencies in the requirements.txt
 Many of the files use a `data` folder and a `models` folder. If they are not already in this repo, you can create them.
 In order to get you started with data, use the [get_data.ipynb](miscellaneous/get-data.ipynb) file to download yourself some data. Save some bitcoin 1m data in a csv file titled `/data/btc.csv`
 
+Also as an added convenience, if on linux of mac just create a symbolic link to your data folder wherever that may be on your system. navigat to the root folder of your project and type `ln -s <target folder location> <alias folder name>` that will create a shortcut that looks like a folder in your project root folder
+
 ### Playing with the data
 
 You might start with the random forest files they are probably the cleanest and seem to be the most productive.

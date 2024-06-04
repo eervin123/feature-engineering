@@ -11,6 +11,12 @@
 # Icon must end with two \r
 Icon
 
+# Tensorflow
+tensorboard
+events.out.tfevents.*
+
+# HTML
+*.html
 
 # Thumbnails
 ._*
