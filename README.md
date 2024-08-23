@@ -1,4 +1,4 @@
-# Eric's Backtesting and Feature Generation
+# Backtesting and Feature Generation
 
 ## Table of Contents
 
