@@ -96,12 +96,12 @@ class MarketRegimeDetector:
 
     def analyze_regimes(self, data, init_cash=10000, fees=0.001):
         regime_names = [
-            'Above Avg Vol Bull Trend',
-            'Below Avg Vol Bull Trend',
-            'Above Avg Vol Bear Trend',
-            'Below Avg Vol Bear Trend',
-            'Above Avg Vol Sideways',
-            'Below Avg Vol Sideways'
+            'High Vol Bull Trend',
+            'Low Vol Bull Trend',
+            'High Vol Bear Trend',
+            'Low Vol Bear Trend',
+            'High Vol Sideways',
+            'Low Vol Sideways'
         ]
 
         all_stats = {}
@@ -128,7 +128,8 @@ if __name__ == "__main__":
     print("\nTotal Return for each regime:")
     for regime in stats.columns:
         total_return = stats.loc['Total Return [%]', regime]
-        print(f"{regime}: {total_return:.2f}%")
+        pos_coverage = stats.loc['Position Coverage [%]', regime]
+        print(f"{regime}: TR: {total_return:.2f}% Time in Regime: {pos_coverage:.2f}%")
 
     # Optional: If you want to keep the CSV saving functionality
     csv_filename = 'backtest-notebooks/notebook-results/regime_statistics.csv'
