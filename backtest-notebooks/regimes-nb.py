@@ -121,32 +121,20 @@ class MarketRegimeDetector:
 
 # Test code
 if __name__ == "__main__":
-    try:
-        print("Creating MarketRegimeDetector instance")
-        detector = MarketRegimeDetector()
-        print("MarketRegimeDetector instance created successfully")
-        
-        print("Fetching BTC-USD data")
-        btc_data = detector.detect_regimes('BTC-USD')
-        print("Data fetched successfully")
-        print(btc_data.head())
-        
-        print("Analyzing regimes")
-        try:
-            stats = detector.analyze_regimes(btc_data)
-            print("Regime analysis completed")
-            
-            print("\nTotal Return for each regime:")
-            for regime in stats.columns:
-                total_return = stats.loc['Total Return [%]', regime]
-                print(f"{regime}: {total_return:.2f}%")
-        except Exception as e:
-            print(f"Error during regime analysis: {str(e)}")
-            print("Traceback:")
-            traceback.print_exc()
-    
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        print("Traceback:")
-        traceback.print_exc()
+    detector = MarketRegimeDetector()
+    btc_data = detector.detect_regimes('BTC-USD')
+    stats = detector.analyze_regimes(btc_data)
+
+    print("\nTotal Return for each regime:")
+    for regime in stats.columns:
+        total_return = stats.loc['Total Return [%]', regime]
+        print(f"{regime}: {total_return:.2f}%")
+
+    # Optional: If you want to keep the CSV saving functionality
+    csv_filename = 'backtest-notebooks/notebook-results/regime_statistics.csv'
+    stats.to_csv(csv_filename)
+    print(f"\nStatistics have been saved to {csv_filename}")
+
+    # Optional: If you want to keep the plotting functionality
+    # detector.plot_regimes(btc_data)
 
