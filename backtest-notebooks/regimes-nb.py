@@ -56,7 +56,7 @@ def calculate_regimes_nb(price, returns, ma_short_window, ma_long_window, vol_sh
     regimes = determine_regime_nb(price, ma_short, ma_long, vol_short, avg_vol_threshold)
     return regimes
 
-class MarketRegimeDetector:
+class MarketRegimeDetector_1d:
     def __init__(self):
         self.RegimeIndicator = vbt.IndicatorFactory(
             class_name='RegimeIndicator',
@@ -66,9 +66,10 @@ class MarketRegimeDetector:
         ).with_apply_func(calculate_regimes_nb)
 
     def detect_regimes(self, data, ma_short_window=21, ma_long_window=88, vol_short_window=21, avg_vol_window=365):
-        if isinstance(data, str):
-            data = vbt.YFData.fetch(data, end='2024-01-01').get()
+        if not isinstance(data, pd.DataFrame) or 'Close' not in data.columns:
+            raise ValueError("Input data must be a DataFrame with a 'Close' column")
         
+        data = data.copy()
         data['Return'] = data['Close'].pct_change()
         
         regime_indicator = self.RegimeIndicator.run(
@@ -121,21 +122,43 @@ class MarketRegimeDetector:
 
 # Test code
 if __name__ == "__main__":
-    detector = MarketRegimeDetector()
-    btc_data = detector.detect_regimes('BTC-USD')
-    stats = detector.analyze_regimes(btc_data)
+    # Fetch data separately for BTC and ETH
+    btc_data = vbt.YFData.fetch('BTC-USD', end='2024-01-01').get()
+    eth_data = vbt.YFData.fetch('ETH-USD', end='2024-01-01').get()
 
-    print("\nTotal Return for each regime:")
-    for regime in stats.columns:
-        total_return = stats.loc['Total Return [%]', regime]
-        pos_coverage = stats.loc['Position Coverage [%]', regime]
+    detector = MarketRegimeDetector_1d()
+
+    # Analyze BTC
+    btc_data_with_regimes = detector.detect_regimes(btc_data)
+    btc_stats = detector.analyze_regimes(btc_data_with_regimes)
+
+    # Analyze ETH
+    eth_data_with_regimes = detector.detect_regimes(eth_data)
+    eth_stats = detector.analyze_regimes(eth_data_with_regimes)
+
+    # Print results for BTC
+    print("\nBTC Total Return for each regime:")
+    for regime in btc_stats.columns:
+        total_return = btc_stats.loc['Total Return [%]', regime]
+        pos_coverage = btc_stats.loc['Position Coverage [%]', regime]
         print(f"{regime}: TR: {total_return:.2f}% Time in Regime: {pos_coverage:.2f}%")
 
-    # Optional: If you want to keep the CSV saving functionality
-    csv_filename = 'backtest-notebooks/notebook-results/regime_statistics.csv'
-    stats.to_csv(csv_filename)
-    print(f"\nStatistics have been saved to {csv_filename}")
+    # Print results for ETH
+    print("\nETH Total Return for each regime:")
+    for regime in eth_stats.columns:
+        total_return = eth_stats.loc['Total Return [%]', regime]
+        pos_coverage = eth_stats.loc['Position Coverage [%]', regime]
+        print(f"{regime}: TR: {total_return:.2f}% Time in Regime: {pos_coverage:.2f}%")
+
+    # Save statistics to CSV
+    btc_csv_filename = 'backtest-notebooks/notebook-results/btc_regime_statistics.csv'
+    eth_csv_filename = 'backtest-notebooks/notebook-results/eth_regime_statistics.csv'
+    btc_stats.to_csv(btc_csv_filename)
+    eth_stats.to_csv(eth_csv_filename)
+    print(f"\nBTC Statistics have been saved to {btc_csv_filename}")
+    print(f"ETH Statistics have been saved to {eth_csv_filename}")
 
     # Optional: If you want to keep the plotting functionality
-    # detector.plot_regimes(btc_data)
+    # detector.plot_regimes(btc_data_with_regimes)
+    # detector.plot_regimes(eth_data_with_regimes)
 
