@@ -113,6 +113,68 @@ def calculate_regimes_nb(
     )
     return regimes
 
+@njit
+def psar_nb_with_next(high, low, close, af0=0.02, af_increment=0.02, max_af=0.2):
+    length = len(high)
+    long = np.full(length, np.nan)
+    short = np.full(length, np.nan)
+    af = np.full(length, np.nan)
+    reversal = np.zeros(length, dtype=np.int_)
+    next_long = np.full(length, np.nan)
+    next_short = np.full(length, np.nan)
+
+    # Find first non-NaN index
+    start_idx = 0
+    while start_idx < length and (np.isnan(high[start_idx]) or np.isnan(low[start_idx]) or np.isnan(close[start_idx])):
+        start_idx += 1
+
+    if start_idx >= length:
+        return long, short, af, reversal, next_long, next_short
+
+    falling = False
+    acceleration_factor = af0
+    extreme_point = high[start_idx] if falling else low[start_idx]
+    sar = low[start_idx] if falling else high[start_idx]
+
+    for i in range(start_idx + 1, length):
+        if falling:
+            sar = max(sar + acceleration_factor * (extreme_point - sar), high[i-1], high[i-2] if i > start_idx + 1 else high[i-1])
+            if high[i] > sar:
+                falling = False
+                reversal[i] = 1
+                sar = extreme_point
+                extreme_point = high[i]
+                acceleration_factor = af0
+        else:
+            sar = min(sar + acceleration_factor * (extreme_point - sar), low[i-1], low[i-2] if i > start_idx + 1 else low[i-1])
+            if low[i] < sar:
+                falling = True
+                reversal[i] = 1
+                sar = extreme_point
+                extreme_point = low[i]
+                acceleration_factor = af0
+
+        if falling:
+            if low[i] < extreme_point:
+                extreme_point = low[i]
+                acceleration_factor = min(acceleration_factor + af_increment, max_af)
+            short[i] = sar
+        else:
+            if high[i] > extreme_point:
+                extreme_point = high[i]
+                acceleration_factor = min(acceleration_factor + af_increment, max_af)
+            long[i] = sar
+
+        af[i] = acceleration_factor
+
+        if i < length - 1:
+            next_sar = sar + acceleration_factor * (extreme_point - sar)
+            if falling:
+                next_short[i] = max(next_sar, high[i], high[i-1] if i > start_idx else high[i])
+            else:
+                next_long[i] = min(next_sar, low[i], low[i-1] if i > start_idx else low[i])
+
+    return long, short, af, reversal, next_long, next_short
 
 def plot_strategy_results(strategies, strategy_name, plot_func='plot_cum_returns', height=1200, width=1200):
     """
@@ -221,75 +283,12 @@ simple_bbands_limits_long_only_btc = [2]
 simple_bbands_limits_long_only_eth = [2]
 simple_bbands_limits_short_only_btc = [5, 6]
 simple_bbands_limits_short_only_eth = [5, 6]
+simple_psar_long_only_btc = [1, 2]
+simple_psar_long_only_eth = [1, 2]
+simple_psar_short_only_btc = [5, 6]
+simple_psar_short_only_eth = [5, 6]
 
 # %%
-# Get the data
-data = vbt.BinanceData.from_hdf("data/m1_data.h5")
-btc_1h = data.resample("1H").data["BTCUSDT"]
-btc_daily = data.resample("1D").data["BTCUSDT"]
-btc_daily["Return"] = btc_daily["Close"].pct_change()
-eth_daily = data.resample("1D").data["ETHUSDT"]
-eth_daily["Return"] = eth_daily["Close"].pct_change()
-eth_1h = data.resample("1H").data["ETHUSDT"]
-
-# Set up the RegimeIndicator
-RegimeIndicator = vbt.IndicatorFactory(
-    class_name="RegimeIndicator",
-    input_names=["price", "returns"],
-    param_names=[
-        "ma_short_window",
-        "ma_long_window",
-        "vol_short_window",
-        "avg_vol_window",
-    ],
-    output_names=["regimes"],
-).with_apply_func(calculate_regimes_nb)
-
-# Add regimes to DataFrame
-btc_regime_indicator = RegimeIndicator.run(
-    btc_daily["Close"],
-    btc_daily["Return"],
-    ma_short_window=21,
-    ma_long_window=88,
-    vol_short_window=21,
-    avg_vol_window=365,
-)
-eth_regime_indicator = RegimeIndicator.run(
-    eth_daily["Close"],
-    eth_daily["Return"],
-    ma_short_window=21,
-    ma_long_window=88,
-    vol_short_window=21,
-    avg_vol_window=365,
-)
-
-btc_daily["Market Regime"] = btc_regime_indicator.regimes.values
-eth_daily["Market Regime"] = eth_regime_indicator.regimes.values
-
-# Plot heatmap overlay for BTC Market Regimes
-btc_daily["Close"].vbt.overlay_with_heatmap(
-    btc_daily["Market Regime"],
-    title="BTC Market Regimes",
-    height=200
-).show()
-
-# Plot heatmap overlay for ETH Market Regimes
-eth_daily["Close"].vbt.overlay_with_heatmap(
-    eth_daily["Market Regime"],
-    title="ETH Market Regimes",
-    height=200
-).show()
-
-# Resample the regime data to hourly frequency
-btc_daily_regime_data = btc_daily["Market Regime"]
-btc_hourly_regime_data = btc_daily_regime_data.resample("1h").ffill()
-eth_daily_regime_data = eth_daily["Market Regime"]
-eth_hourly_regime_data = eth_daily_regime_data.resample("1h").ffill()
-
-# Align the hourly regime data with the btc and eth DataFrames
-btc_aligned_regime_data = btc_hourly_regime_data.reindex(btc_1h.index, method="ffill")
-eth_aligned_regime_data = eth_hourly_regime_data.reindex(eth_1h.index, method="ffill")
-
 def run_bbands_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
@@ -370,50 +369,6 @@ def run_bbands_strategy(
     return pf
 
 
-# Test the function
-btc_bbands_long_only_pf = run_bbands_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_bbands_limits_long_only_btc,
-    direction="long",
-)
-eth_bbands_long_only_pf = run_bbands_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_bbands_limits_long_only_eth,
-    direction="long",
-)
-
-btc_bbands_short_only_pf = run_bbands_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_bbands_limits_short_only_btc,
-    direction="short",
-)
-eth_bbands_short_only_pf = run_bbands_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_bbands_limits_short_only_eth,
-    direction="short",
-)
-
-bbands_stats = pd.concat(
-    [
-        btc_bbands_long_only_pf.stats(),
-        eth_bbands_long_only_pf.stats(),
-        btc_bbands_short_only_pf.stats(),
-        eth_bbands_short_only_pf.stats(),
-    ],
-    axis=1,
-    keys=[
-        "btc_bbands_long_only",
-        "eth_bbands_long_only",
-        "btc_bbands_short_only",
-        "eth_bbands_short_only",
-    ],
-)
-print(bbands_stats)
-
 def run_ma_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
@@ -474,53 +429,6 @@ def run_ma_strategy(
     return pf
 
 
-btc_ma_long_only_pf = run_ma_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_ma_long_only_btc,
-    fast_ma=21,
-    slow_ma=55,
-)
-eth_ma_long_only_pf = run_ma_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_ma_long_only_eth,
-    fast_ma=21,
-    slow_ma=55,
-)
-btc_ma_short_only_pf = run_ma_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_ma_short_only_btc,
-    fast_ma=21,
-    slow_ma=55,
-    direction="short",
-)
-eth_ma_short_only_pf = run_ma_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_ma_short_only_eth,
-    fast_ma=21,
-    slow_ma=55,
-    direction="short",
-)
-
-ma_stats =pd.concat(
-    [
-        btc_ma_long_only_pf.stats(),
-        eth_ma_long_only_pf.stats(),
-        btc_ma_short_only_pf.stats(),
-        eth_ma_short_only_pf.stats(),
-    ],
-    axis=1,
-    keys=[
-        "btc_ma_long_only",
-        "eth_ma_long_only",
-        "btc_ma_short_only",
-        "eth_ma_short_only",
-    ],
-)
-print(ma_stats)
 
 def run_rsi_divergence_strategy(
     symbol_ohlcv_df: pd.DataFrame,
@@ -614,24 +522,7 @@ def run_rsi_divergence_strategy(
         )
     return pf
 
-# Test the function
-btc_rsi_divergence_pf_long = run_rsi_divergence_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_rsi_divergence_long_only_btc,
-    direction="long",
-)
 
-
-# Plot the results
-height = 600
-btc_rsi_divergence_pf_long.plot(
-    height=height,
-    title=f"BTC RSI Divergence Strategy (regimes {simple_rsi_divergence_long_only_btc})"
-).show()
-
-print("BTC RSI Divergence Long Only")
-print(btc_rsi_divergence_pf_long.stats())
 
 def run_macd_divergence_strategy(
     symbol_ohlcv_df: pd.DataFrame,
@@ -640,8 +531,6 @@ def run_macd_divergence_strategy(
     fast_window: int = 12,
     slow_window: int = 26,
     signal_window: int = 9,
-    atr_window: int = 14,
-    atr_multiplier: float = 2.0,
     fees: float = 0.001,
     direction: str = "long",  # or 'short'
 ):
@@ -712,55 +601,72 @@ def run_macd_divergence_strategy(
         )
     return pf
 
-# Test the function for BTC MACD long-only strategy
-btc_macd_long_only_pf = run_macd_divergence_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_macd_long_only_btc,
-    direction="long",
-)
 
-# Test the function for BTC MACD short-only strategy
-btc_macd_short_only_pf = run_macd_divergence_strategy(
-    btc_1h,
-    btc_aligned_regime_data,
-    allowed_regimes=simple_macd_short_only_btc,
-    direction="short",
-)
 
-# Test the function for ETH MACD long-only strategy
-eth_macd_long_only_pf = run_macd_divergence_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_macd_long_only_eth,
-    direction="long",
-)
+def run_psar_strategy(
+    symbol_ohlcv_df: pd.DataFrame,
+    regime_data: pd.Series,
+    allowed_regimes: list,
+    direction: str = "long",  # or 'short'
+    fees: float = 0.001,
+    af0: float = 0.02,
+    af_increment: float = 0.02,
+    max_af: float = 0.2,
+):
+    """
+    Run a PSAR strategy on a given symbol's OHLCV data.
 
-# Test the function for ETH MACD short-only strategy
-eth_macd_short_only_pf = run_macd_divergence_strategy(
-    eth_1h,
-    eth_aligned_regime_data,
-    allowed_regimes=simple_macd_short_only_eth,
-    direction="short",
-)
+    Parameters:
+    symbol_ohlcv_df (pd.DataFrame): OHLCV data for the symbol.
+    regime_data (pd.Series): Market regime data.
+    allowed_regimes (list): List of allowed market regimes for the strategy.
+    direction (str): Direction of the strategy ('long' or 'short').
+    fees (float): Transaction fees.
+    af0 (float): Initial acceleration factor for PSAR.
+    af_increment (float): Increment of acceleration factor for PSAR.
+    max_af (float): Maximum acceleration factor for PSAR.
 
-# Print statistics
-macd_stats = pd.concat(
-    [
-        btc_macd_long_only_pf.stats(),
-        btc_macd_short_only_pf.stats(),
-        eth_macd_long_only_pf.stats(),
-        eth_macd_short_only_pf.stats(),
-    ],
-    axis=1,
-    keys=[
-        "btc_macd_long_only",
-        "btc_macd_short_only",
-        "eth_macd_long_only",
-        "eth_macd_short_only",
-    ],
-)
-print(macd_stats)
+    Returns:
+    vbt.Portfolio: Portfolio object containing the strategy results.
+    """
+    high = symbol_ohlcv_df["High"].values
+    low = symbol_ohlcv_df["Low"].values
+    close = symbol_ohlcv_df["Close"].values
+
+    psarl, psars, psaraf, psarr, next_psarl, next_psars = psar_nb_with_next(high, low, close, af0, af_increment, max_af)
+
+    next_psarl_series = pd.Series(next_psarl, index=symbol_ohlcv_df.index)
+    next_psars_series = pd.Series(next_psars, index=symbol_ohlcv_df.index)
+
+    # Use next_psarl and next_psars for entries
+    long_entries = (~next_psarl_series.isnull()) & (regime_data.isin(allowed_regimes))
+    short_entries = (~next_psars_series.isnull()) & (regime_data.isin(allowed_regimes))
+
+    # For exits, we can use the current PSAR values
+    long_exits = (~next_psars_series.isnull()) | ~regime_data.isin(allowed_regimes)
+    short_exits = (~next_psarl_series.isnull()) | ~regime_data.isin(allowed_regimes)
+
+    if direction == "long":
+        pf = vbt.PF.from_signals(
+            close=symbol_ohlcv_df["Close"],
+            entries=long_entries,
+            exits=long_exits,
+            fees=fees,
+            delta_format="target",
+        )
+    else:
+        pf = vbt.PF.from_signals(
+            close=symbol_ohlcv_df["Close"],
+            short_entries=short_entries,
+            short_exits=short_exits,
+            fees=fees,
+            delta_format="target",
+        )
+    return pf
+
+
+
+
 
 # %% [markdown]
 # # For a break let's have a look at a blended portfolio of strategies
@@ -769,59 +675,298 @@ print(macd_stats)
 
 # %%
 # First create a combined dataframe with the 2 symbols' closing prices
-btc_eth_combined = pd.concat(
-    [btc_1h["Close"], eth_1h["Close"]], axis=1, keys=["BTCUSDT", "ETHUSDT"]
-)
 
-# Now we can run the portfolio on the combined dataframe
-btc_eth_pf_long_short_blend = vbt.Portfolio.column_stack(
-    [
-        btc_bbands_long_only_pf,
-        btc_bbands_short_only_pf,
-        eth_bbands_long_only_pf,
-        eth_bbands_short_only_pf,
-        btc_ma_long_only_pf,
-        eth_ma_long_only_pf,
-        btc_ma_short_only_pf,
-        eth_ma_short_only_pf,
-        btc_rsi_divergence_pf_long,
-        btc_macd_long_only_pf,
-        # btc_macd_short_only_pf,
-        eth_macd_long_only_pf,
-        # eth_macd_short_only_pf,
-    ],
-    cash_sharing=True,
-    group_by=True,
-    init_cash=1100,  # 1300 is 13 times the initial capital because we are using 13 strategies
-)
-btc_eth_pf_long_only_blend = vbt.Portfolio.column_stack(
-    [
-        btc_bbands_long_only_pf,
-        btc_ma_long_only_pf,
-        eth_bbands_long_only_pf,
-        eth_ma_long_only_pf,
-        btc_rsi_divergence_pf_long,
-        btc_macd_long_only_pf,
-        eth_macd_long_only_pf,
-    ],
-    cash_sharing=True,
-    group_by=True,
-    init_cash=700,  # 700 is 7 times the initial capital because we are using 7 strategies
-)
-btc_eth_pf_short_only_blend = vbt.Portfolio.column_stack(
-    [
-        btc_bbands_short_only_pf,
-        eth_bbands_short_only_pf,
-        eth_ma_short_only_pf,
-        btc_ma_short_only_pf,
-        btc_macd_short_only_pf,
-        eth_macd_short_only_pf,
-    ],
-    cash_sharing=True,
-    group_by=True,
-    init_cash=600,  # 600 is 6 times the initial capital because we are using 6 strategies
-)
-blended_stats = pd.concat(
+
+def main():
+    # Get the data
+    data = vbt.BinanceData.from_hdf("data/m1_data.h5")
+    btc_1h = data.resample("1H").data["BTCUSDT"]
+    btc_daily = data.resample("1D").data["BTCUSDT"]
+    btc_daily["Return"] = btc_daily["Close"].pct_change()
+    eth_daily = data.resample("1D").data["ETHUSDT"]
+    eth_daily["Return"] = eth_daily["Close"].pct_change()
+    eth_1h = data.resample("1H").data["ETHUSDT"]
+    
+    # Set up the RegimeIndicator
+    RegimeIndicator = vbt.IndicatorFactory(
+        class_name="RegimeIndicator",
+        input_names=["price", "returns"],
+        param_names=[
+            "ma_short_window",
+            "ma_long_window",
+            "vol_short_window",
+            "avg_vol_window",
+        ],
+        output_names=["regimes"],
+    ).with_apply_func(calculate_regimes_nb)
+
+    # Add regimes to DataFrame
+    btc_regime_indicator = RegimeIndicator.run(
+        btc_daily["Close"],
+        btc_daily["Return"],
+        ma_short_window=21,
+        ma_long_window=88,
+        vol_short_window=21,
+        avg_vol_window=365,
+    )
+    eth_regime_indicator = RegimeIndicator.run(
+        eth_daily["Close"],
+        eth_daily["Return"],
+        ma_short_window=21,
+        ma_long_window=88,
+        vol_short_window=21,
+        avg_vol_window=365,
+    )
+
+    btc_daily["Market Regime"] = btc_regime_indicator.regimes.values
+    eth_daily["Market Regime"] = eth_regime_indicator.regimes.values
+
+    # Plot heatmap overlay for BTC Market Regimes
+    btc_daily["Close"].vbt.overlay_with_heatmap(
+        btc_daily["Market Regime"],
+        title="BTC Market Regimes",
+        height=200
+    ).show()
+
+    # Plot heatmap overlay for ETH Market Regimes
+    eth_daily["Close"].vbt.overlay_with_heatmap(
+        eth_daily["Market Regime"],
+        title="ETH Market Regimes",
+        height=200
+    ).show()
+
+    # Resample the regime data to hourly frequency
+    btc_daily_regime_data = btc_daily["Market Regime"]
+    btc_hourly_regime_data = btc_daily_regime_data.resample("1h").ffill()
+    eth_daily_regime_data = eth_daily["Market Regime"]
+    eth_hourly_regime_data = eth_daily_regime_data.resample("1h").ffill()
+
+    # Align the hourly regime data with the btc and eth DataFrames
+    btc_aligned_regime_data = btc_hourly_regime_data.reindex(btc_1h.index, method="ffill")
+    eth_aligned_regime_data = eth_hourly_regime_data.reindex(eth_1h.index, method="ffill")
+
+    # Run the BBands strategy for BTC and ETH
+    btc_bbands_long_only_pf = run_bbands_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_bbands_limits_long_only_btc,
+        direction="long",
+    )
+    eth_bbands_long_only_pf = run_bbands_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_bbands_limits_long_only_eth,
+        direction="long",
+    )
+
+    btc_bbands_short_only_pf = run_bbands_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_bbands_limits_short_only_btc,
+        direction="short",
+    )
+    eth_bbands_short_only_pf = run_bbands_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_bbands_limits_short_only_eth,
+        direction="short",
+    )
+
+    # Run the MA strategy for BTC and ETH
+    btc_ma_long_only_pf = run_ma_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_ma_long_only_btc,
+        fast_ma=21,
+        slow_ma=55,
+    )
+    eth_ma_long_only_pf = run_ma_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_ma_long_only_eth,
+        fast_ma=21,
+        slow_ma=55,
+    )
+    btc_ma_short_only_pf = run_ma_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_ma_short_only_btc,
+        fast_ma=21,
+        slow_ma=55,
+        direction="short",
+    )
+    eth_ma_short_only_pf = run_ma_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_ma_short_only_eth,
+        fast_ma=21,
+        slow_ma=55,
+        direction="short",
+    )
+
+    # Run the RSI divergence strategy for BTC and ETH
+
+    btc_rsi_divergence_pf_long = run_rsi_divergence_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_rsi_divergence_long_only_btc,
+        direction="long",
+    )
+    # TODO: figure out where to plot this with the others
+    
+    # Run the MACD divergence strategy for BTC and ETH
+    btc_macd_long_only_pf = run_macd_divergence_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_macd_long_only_btc,
+        direction="long",
+    )
+
+    # Test the function for BTC MACD short-only strategy
+    btc_macd_short_only_pf = run_macd_divergence_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_macd_short_only_btc,
+        direction="short",
+    )
+
+    # Test the function for ETH MACD long-only strategy
+    eth_macd_long_only_pf = run_macd_divergence_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_macd_long_only_eth,
+        direction="long",
+    )
+
+    # Test the function for ETH MACD short-only strategy
+    eth_macd_short_only_pf = run_macd_divergence_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_macd_short_only_eth,
+        direction="short",
+    )
+    
+    # Run the PSAR strategy for BTC and ETH
+    btc_psar_long_only_pf = run_psar_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_psar_long_only_btc,
+        direction="long",
+    )
+    eth_psar_long_only_pf = run_psar_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_psar_long_only_eth,
+        direction="long",
+        fees=0.001,
+        af0=0.02,
+        af_increment=0.02,
+        max_af=0.2,
+    )
+
+    btc_psar_short_only_pf = run_psar_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=simple_psar_short_only_btc,
+        direction="short",
+    )
+    eth_psar_short_only_pf = run_psar_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=simple_psar_short_only_eth,
+        direction="short",
+        fees=0.001,
+        af0=0.02,
+        af_increment=0.02,
+        max_af=0.2,
+    )
+    
+    # Now we can run the portfolio on the combined dataframe
+    btc_eth_pf_long_short_blend = vbt.Portfolio.column_stack(
+        [
+            btc_bbands_long_only_pf,
+            btc_bbands_short_only_pf,
+            eth_bbands_long_only_pf,
+            eth_bbands_short_only_pf,
+            btc_ma_long_only_pf,
+            eth_ma_long_only_pf,
+            btc_ma_short_only_pf,
+            eth_ma_short_only_pf,
+            btc_rsi_divergence_pf_long,
+            btc_macd_long_only_pf,
+            eth_macd_long_only_pf,
+            btc_psar_long_only_pf,
+            eth_psar_long_only_pf,
+            btc_psar_short_only_pf,
+            eth_psar_short_only_pf,
+        ],
+        cash_sharing=True,
+        group_by=True,
+        init_cash=1500,  # Adjusted for the number of strategies
+    )
+    btc_eth_pf_long_only_blend = vbt.Portfolio.column_stack(
+        [
+            btc_bbands_long_only_pf,
+            btc_ma_long_only_pf,
+            eth_bbands_long_only_pf,
+            eth_ma_long_only_pf,
+            btc_rsi_divergence_pf_long,
+            btc_macd_long_only_pf,
+            eth_macd_long_only_pf,
+            btc_psar_long_only_pf,
+            eth_psar_long_only_pf,
+        ],
+        cash_sharing=True,
+        group_by=True,
+        init_cash=900,  # 9 times the initial capital because we are using 9 strategies
+    )
+    btc_eth_pf_short_only_blend = vbt.Portfolio.column_stack(
+        [
+            btc_bbands_short_only_pf,
+            eth_bbands_short_only_pf,
+            eth_ma_short_only_pf,
+            btc_ma_short_only_pf,
+            btc_macd_short_only_pf,
+            eth_macd_short_only_pf,
+            btc_psar_short_only_pf,
+            eth_psar_short_only_pf,
+        ],
+        cash_sharing=True,
+        group_by=True,
+        init_cash=800,  # 8 times the initial capital because we are using 8 strategies
+    )
+
+    # Build concatenated stats for individual strategies
+    individual_stats = pd.concat(
+        [
+            btc_macd_long_only_pf.stats(),
+            btc_macd_short_only_pf.stats(),
+            eth_macd_long_only_pf.stats(),
+            eth_macd_short_only_pf.stats(),
+            btc_bbands_long_only_pf.stats(),
+            btc_bbands_short_only_pf.stats(),
+            eth_bbands_long_only_pf.stats(),
+            eth_bbands_short_only_pf.stats(),
+            btc_rsi_divergence_pf_long.stats(),
+            btc_ma_long_only_pf.stats(),
+            btc_ma_short_only_pf.stats(),
+            eth_ma_long_only_pf.stats(),
+            eth_ma_short_only_pf.stats(),
+            btc_psar_long_only_pf.stats(),
+            btc_psar_short_only_pf.stats(),
+            eth_psar_long_only_pf.stats(),
+            eth_psar_short_only_pf.stats(),
+        ],
+        axis=1,
+        keys=[
+            "BTC MACD Long", "BTC MACD Short", "ETH MACD Long", "ETH MACD Short",
+            "BTC BBands Long", "BTC BBands Short", "ETH BBands Long", "ETH BBands Short", "BTC RSI Divergence",
+            "BTC MA Long", "BTC MA Short", "ETH MA Long", "ETH MA Short",
+            "BTC PSAR Long", "BTC PSAR Short", "ETH PSAR Long", "ETH PSAR Short"
+        ]
+    )
+    individual_stats.to_csv("individual_strategy_stats.csv")
+    blended_stats = pd.concat(
     [
         btc_eth_pf_long_short_blend.stats(),
         btc_eth_pf_long_only_blend.stats(),
@@ -834,46 +979,57 @@ blended_stats = pd.concat(
         "btc_eth_pf_short_only_blend",
     ],
 )
-print(blended_stats)
-# %%
+
+    # Print individual strategy statistics
+    print("Individual Strategy Statistics:")
+    print(individual_stats)
+
+    # Print blended portfolio statistics
+    print("\nBlended Portfolio Statistics:")
+    print(blended_stats)
 
 
-# %%
-vbt.settings.plotting.use_resampler = False
+    vbt.settings.plotting.use_resampler = False
 
-# Usage for MACD strategies
-macd_strategies = [btc_macd_long_only_pf, btc_macd_short_only_pf, eth_macd_long_only_pf, eth_macd_short_only_pf]
-macd_plots = plot_strategy_results(macd_strategies, "MACD Divergence")
-macd_plots.show()
+    # Usage for MACD strategies
+    macd_strategies = [btc_macd_long_only_pf, btc_macd_short_only_pf, eth_macd_long_only_pf, eth_macd_short_only_pf]
+    macd_plots = plot_strategy_results(macd_strategies, "MACD Divergence")
+    macd_plots.show()
 
-# Usage for BBands strategies
-bbands_strategies = [btc_bbands_long_only_pf, btc_bbands_short_only_pf, eth_bbands_long_only_pf, eth_bbands_short_only_pf]
-bbands_plots = plot_strategy_results(bbands_strategies, "Bollinger Bands")
-bbands_plots.show()
+    # Usage for BBands strategies
+    bbands_strategies = [btc_bbands_long_only_pf, btc_bbands_short_only_pf, eth_bbands_long_only_pf, eth_bbands_short_only_pf]
+    bbands_plots = plot_strategy_results(bbands_strategies, "Bollinger Bands")
+    bbands_plots.show()
 
-# Usage for MA strategies
-ma_strategies = [btc_ma_long_only_pf, btc_ma_short_only_pf, eth_ma_long_only_pf, eth_ma_short_only_pf]
-ma_plots = plot_strategy_results(ma_strategies, "Moving Average")
-ma_plots.show()
+    # Usage for MA strategies
+    ma_strategies = [btc_ma_long_only_pf, btc_ma_short_only_pf, eth_ma_long_only_pf, eth_ma_short_only_pf]
+    ma_plots = plot_strategy_results(ma_strategies, "Moving Average")
+    ma_plots.show()
 
-# Usage example:
-blended_heatmap = create_monthly_returns_heatmap(
-    btc_eth_pf_long_short_blend, 
-    "Monthly Returns Heatmap - BTC ETH Blended Portfolio"
-)
-blended_heatmap.show()
+    # Usage for PSAR strategies
+    psar_strategies = [btc_psar_long_only_pf, btc_psar_short_only_pf, eth_psar_long_only_pf, eth_psar_short_only_pf]
+    psar_plots = plot_strategy_results(psar_strategies, "Parabolic SAR")
+    psar_plots.show()
 
-# You can easily create heatmaps for other portfolios:
-long_only_heatmap = create_monthly_returns_heatmap(
-    btc_eth_pf_long_only_blend, 
-    "Monthly Returns Heatmap - BTC ETH Long Only Portfolio"
-)
-long_only_heatmap.show()
+    # Usage example:
+    blended_heatmap = create_monthly_returns_heatmap(
+        btc_eth_pf_long_short_blend, 
+        "Monthly Returns Heatmap - BTC ETH Blended Portfolio"
+    )
+    blended_heatmap.show()
 
-short_only_heatmap = create_monthly_returns_heatmap(
-    btc_eth_pf_short_only_blend, 
-    "Monthly Returns Heatmap - BTC ETH Short Only Portfolio"
-)
-short_only_heatmap.show()
+    # You can easily create heatmaps for other portfolios:
+    long_only_heatmap = create_monthly_returns_heatmap(
+        btc_eth_pf_long_only_blend, 
+        "Monthly Returns Heatmap - BTC ETH Long Only Portfolio"
+    )
+    long_only_heatmap.show()
 
-# %%
+    short_only_heatmap = create_monthly_returns_heatmap(
+        btc_eth_pf_short_only_blend, 
+        "Monthly Returns Heatmap - BTC ETH Short Only Portfolio"
+    )
+    short_only_heatmap.show()
+
+if __name__ == "__main__":
+    main()
