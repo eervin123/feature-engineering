@@ -882,6 +882,8 @@ def main():
             btc_ma_short_only_pf,
             eth_ma_short_only_pf,
             btc_rsi_divergence_pf_long,
+            btc_macd_short_only_pf,
+            eth_macd_short_only_pf,
             btc_macd_long_only_pf,
             eth_macd_long_only_pf,
             btc_psar_long_only_pf,
@@ -891,7 +893,7 @@ def main():
         ],
         cash_sharing=True,
         group_by=True,
-        init_cash=1500,  # Adjusted for the number of strategies
+        init_cash=1700,  # Adjusted for the number of strategies
     )
     btc_eth_pf_long_only_blend = vbt.Portfolio.column_stack(
         [
