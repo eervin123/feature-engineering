@@ -368,7 +368,6 @@ def run_bbands_strategy(
         )
     return pf
 
-
 def run_ma_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
@@ -427,8 +426,6 @@ def run_ma_strategy(
         )
 
     return pf
-
-
 
 def run_rsi_divergence_strategy(
     symbol_ohlcv_df: pd.DataFrame,
@@ -522,8 +519,6 @@ def run_rsi_divergence_strategy(
         )
     return pf
 
-
-
 def run_macd_divergence_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
@@ -601,8 +596,6 @@ def run_macd_divergence_strategy(
         )
     return pf
 
-
-
 def run_psar_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
@@ -664,19 +657,7 @@ def run_psar_strategy(
         )
     return pf
 
-
-
-
-
-# %% [markdown]
-# # For a break let's have a look at a blended portfolio of strategies
-#
-# Here we compare some blends with long and short strategies and some with only long or only short strategies
-
-# %%
-# First create a combined dataframe with the 2 symbols' closing prices
-
-
+################ Main #########################
 def main():
     # Get the data
     data = vbt.BinanceData.from_hdf("data/m1_data.h5")
