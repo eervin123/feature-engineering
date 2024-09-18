@@ -116,17 +116,21 @@ btc_psar_long_only_pf = run_psar_strategy(
     btc_aligned_regime_data,
     allowed_regimes=simple_psar_long_only_btc,
     direction="long",
+    fees=0.001,
+    af0=0.02,
+    af_increment=0.02,
+    max_af=0.05,
 )
-test_regime = [1,2]
+
 eth_psar_long_only_pf = run_psar_strategy(
     eth_1h,
     eth_aligned_regime_data,
-    allowed_regimes=test_regime,
+    allowed_regimes=simple_psar_long_only_eth,
     direction="long",
     fees=0.001,
     af0=0.02,
     af_increment=0.02,
-    max_af=0.2,
+    max_af=0.05,
 )
 
 btc_psar_short_only_pf = run_psar_strategy(
@@ -134,17 +138,21 @@ btc_psar_short_only_pf = run_psar_strategy(
     btc_aligned_regime_data,
     allowed_regimes=simple_psar_short_only_btc,
     direction="short",
+    fees=0.001,
+    af0=0.02,
+    af_increment=0.02,
+    max_af=0.05,
 )
-test_short_regime = [5,6]
+
 eth_psar_short_only_pf = run_psar_strategy(
     eth_1h,
     eth_aligned_regime_data,
-    allowed_regimes=test_short_regime,
+    allowed_regimes=simple_psar_short_only_eth,
     direction="short",
     fees=0.001,
     af0=0.02,
     af_increment=0.02,
-    max_af=0.2,
+    max_af=0.05,
 )
 
 psar_stats = pd.concat(

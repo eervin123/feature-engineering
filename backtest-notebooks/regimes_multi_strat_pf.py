@@ -852,6 +852,10 @@ def main():
         btc_aligned_regime_data,
         allowed_regimes=simple_psar_long_only_btc,
         direction="long",
+        fees=0.001,
+        af0=0.02,
+        af_increment=0.02,
+        max_af=0.05,
     )
     eth_psar_long_only_pf = run_psar_strategy(
         eth_1h,
@@ -861,7 +865,7 @@ def main():
         fees=0.001,
         af0=0.02,
         af_increment=0.02,
-        max_af=0.2,
+        max_af=0.05,
     )
 
     btc_psar_short_only_pf = run_psar_strategy(
@@ -869,6 +873,10 @@ def main():
         btc_aligned_regime_data,
         allowed_regimes=simple_psar_short_only_btc,
         direction="short",
+        fees=0.001,
+        af0=0.02,
+        af_increment=0.02,
+        max_af=0.05,
     )
     eth_psar_short_only_pf = run_psar_strategy(
         eth_1h,
@@ -878,7 +886,7 @@ def main():
         fees=0.001,
         af0=0.02,
         af_increment=0.02,
-        max_af=0.2,
+        max_af=0.05,
     )
     
     # Now we can run the portfolio on the combined dataframe
