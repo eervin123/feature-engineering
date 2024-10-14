@@ -92,6 +92,8 @@ eth_aligned_regime_data = eth_hourly_regime_data.reindex(eth_1h.index, method="f
 def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_data, allowed_regimes, n_trials=500):
     def objective(trial):
         params = {}
+        timeframe_order = ['1h', '4H', '8H', '12H', '24H', '48H', '72H', '1W']
+        
         for k, v in strategy_params.items():
             if isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], (int, float)):
                 if isinstance(v[0], int):
@@ -99,7 +101,18 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
                 else:
                     params[k] = trial.suggest_float(k, v[0], v[1])
             elif isinstance(v, list):
-                params[k] = trial.suggest_categorical(k, v)
+                if k == 'timeframe_1':
+                    params[k] = trial.suggest_categorical(k, v)
+                elif k == 'timeframe_2':
+                    # Only suggest timeframes that are greater than timeframe_1
+                    tf1_index = timeframe_order.index(params['timeframe_1'])
+                    valid_tf2 = [tf for tf in v if timeframe_order.index(tf) > tf1_index]
+                    if not valid_tf2:
+                        # If there are no valid options for timeframe_2, skip this trial
+                        return float('inf')
+                    params[k] = trial.suggest_categorical(k, valid_tf2)
+                else:
+                    params[k] = trial.suggest_categorical(k, v)
             else:
                 params[k] = v
 
@@ -201,7 +214,7 @@ rsi_mean_reversion_params = {
 mean_reversion_params = {
     'bb_window': (5, 300),
     'bb_alpha': (0.5, 4.0),
-    'timeframe_1': ['1h', '4H', '8H', '12H', '24H'],
+    'timeframe_1': ['1h', '4H', '8H', '12H'],
     'timeframe_2': ['24H', '48H', '72H', '1W'],
     'direction': ['long', 'short'],
     'atr_window': (5, 50),
@@ -284,10 +297,25 @@ def run_rsi_mean_reversion_strategy(
     return pf
 
 def mean_reversion_strategy(symbol_ohlcv_df, regime_data, allowed_regimes, direction="long", bb_window=21, bb_alpha=2.0, timeframe_1='4H', timeframe_2='24H', atr_window=14, atr_multiplier=3.0, **kwargs):
+    """
+    Run a mean reversion strategy on a given symbol's OHLCV data.
+
+    Parameters:
+    symbol_ohlcv_df (pd.DataFrame): OHLCV data for the symbol.
+    regime_data (pd.Series): Market regime data.
+    allowed_regimes (list): List of allowed market regimes for the strategy.
+    direction (str): Direction of the strategy ('long' or 'short').
+    bb_window (int): Window size for Bollinger Bands.
+    bb_alpha (float): Number of standard deviations for Bollinger Bands.
+    timeframe_1 (str): First timeframe for Bollinger Bands calculation.
+    timeframe_2 (str): Second timeframe for Bollinger Bands calculation.
+    atr_window (int): Window size for ATR calculation.
+    atr_multiplier (float): Multiplier for ATR to set stop loss and take profit levels.
+    """
+    
     # Convert to vbt.BinanceData
     data = vbt.BinanceData.from_data(symbol_ohlcv_df)
     
-    # Calculate Bollinger Bands on multiple timeframes
     bbands_tf1 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_1)
     bbands_tf2 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_2)
     
@@ -303,21 +331,12 @@ def mean_reversion_strategy(symbol_ohlcv_df, regime_data, allowed_regimes, direc
         (data.close < bbands_tf1.lowerband)
     )
     
-    # Short entries are the inverse of long entries with upper and lower bands swapped
     short_entries = (
         (data.close > bbands_tf2.middleband) &
         (data.close > bbands_tf1.upperband)
     ) | (
         (data.close < bbands_tf2.upperband) &
         (data.close > bbands_tf1.upperband)
-    )
-
-    short_entries = (
-        (data.close < bbands_tf2.upperband) &
-        (data.close > bbands_tf1.middleband)
-    ) | (
-        (data.close < bbands_tf2.upperband) &
-        (data.close < bbands_tf1.upperband)
     )
 
     # Ensure we're only trading in allowed regimes
@@ -621,27 +640,9 @@ def run_psar_strategy_with_stops(
         )
     return pf
 
-def optimize_wrapper(name, func, params):
-    print(f"Optimizing {name}...")
-    
-    # Optimize for long
-    long_params = params.copy()
-    long_params['direction'] = ['long']
-    best_long_params, long_pf, _ = optimize_strategy(func, long_params, btc_1h, btc_aligned_regime_data, [3, 4])
-    
-    # Optimize for short
-    short_params = params.copy()
-    short_params['direction'] = ['short']
-    best_short_params, short_pf, _ = optimize_strategy(func, short_params, btc_1h, btc_aligned_regime_data, [3, 4])
-    
-    # Create stats for both
-    long_stats = create_stats(name, "long", long_pf, best_long_params)
-    short_stats = create_stats(name, "short", short_pf, best_short_params)
-    
-    return long_stats, short_stats, long_pf, short_pf
-
-def create_stats(name, direction, pf, params):
+def create_stats(name, symbol, direction, pf, params):
     return {
+        "Symbol": symbol,
         "Strategy": f"{name} ({direction.capitalize()})",
         "Direction": direction,
         "Total Return": pf.total_return,
@@ -654,8 +655,33 @@ def create_stats(name, direction, pf, params):
         "Profit Factor": pf.trades.profit_factor,
         "Expectancy": pf.trades.expectancy,
         "Total Trades": pf.trades.count(),
+        "Portfolio": pf,  # Store the Portfolio object
         **params
     }
+
+def optimize_wrapper(name, func, params):
+    print(f"Optimizing {name}...")
+    
+    results = []
+    for symbol, ohlcv_df, regime_data in [("BTC", btc_1h, btc_aligned_regime_data), 
+                                          ("ETH", eth_1h, eth_aligned_regime_data)]:
+        # Optimize for long
+        long_params = params.copy()
+        long_params['direction'] = ['long']
+        best_long_params, long_pf, _ = optimize_strategy(func, long_params, ohlcv_df, regime_data, [3, 4])
+        
+        # Optimize for short
+        short_params = params.copy()
+        short_params['direction'] = ['short']
+        best_short_params, short_pf, _ = optimize_strategy(func, short_params, ohlcv_df, regime_data, [3, 4])
+        
+        # Create stats for both
+        long_stats = create_stats(name, symbol, "long", long_pf, best_long_params)
+        short_stats = create_stats(name, symbol, "short", short_pf, best_short_params)
+        
+        results.extend([long_stats, short_stats])
+    
+    return results
 
 def run_optimized_strategies():
     strategies = [
@@ -669,20 +695,27 @@ def run_optimized_strategies():
     ]
 
     results = Parallel(n_jobs=-1)(delayed(optimize_wrapper)(name, func, params) for name, func, params in strategies)
-
-    all_stats = [item for sublist in results for item in sublist[:2]]  # Flatten the stats
-    all_portfolios = [item for sublist in results for item in sublist[2:]]  # Flatten the portfolios
-    strategy_names = [f"{name} (Long)" for name, _, _ in strategies] + [f"{name} (Short)" for name, _, _ in strategies]
-
-    return pd.DataFrame(all_stats), all_portfolios, strategy_names
+    all_stats = [item for sublist in results for item in sublist]  # Flatten the stats
+    return pd.DataFrame(all_stats)
 
 if __name__ == "__main__":
-    optimized_results, portfolios, strategy_names = run_optimized_strategies()
+    optimized_results = run_optimized_strategies()
     optimized_results.to_csv("optimized_results.csv", index=False)
     
-    # Display results in a formatted table
-    print(tabulate(optimized_results, headers='keys', tablefmt='pipe', floatfmt='.4f'))
+    # Display results in formatted tables
+    btc_results = optimized_results[optimized_results['Symbol'] == 'BTC']
+    eth_results = optimized_results[optimized_results['Symbol'] == 'ETH']
+    
+    print("BTC Results:")
+    print(tabulate(btc_results.drop('Portfolio', axis=1), headers='keys', tablefmt='pipe', floatfmt='.4f'))
+    
+    print("\nETH Results:")
+    print(tabulate(eth_results.drop('Portfolio', axis=1), headers='keys', tablefmt='pipe', floatfmt='.4f'))
 
     # Plot the performance for each strategy
-    for pf, strat_name in zip(portfolios, strategy_names):
-        pf.plot(title=strat_name).show()
+    for _, row in optimized_results.iterrows():
+        symbol = row['Symbol']
+        strategy = row['Strategy']
+        direction = row['Direction']
+        pf = row['Portfolio']
+        pf.plot(title=f"{symbol} - {strategy} ({direction.capitalize()})").show()
