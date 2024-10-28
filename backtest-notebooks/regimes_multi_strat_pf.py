@@ -1022,5 +1022,53 @@ def main():
     )
     short_only_heatmap.show()
 
+    # Create a DataFrame with portfolio values for all strategies
+    portfolio_values = pd.concat([
+        btc_macd_long_only_pf.value,
+        btc_macd_short_only_pf.value,
+        eth_macd_long_only_pf.value,
+        eth_macd_short_only_pf.value,
+        btc_bbands_long_only_pf.value,
+        btc_bbands_short_only_pf.value,
+        eth_bbands_long_only_pf.value,
+        eth_bbands_short_only_pf.value,
+        btc_rsi_divergence_pf_long.value,
+        btc_ma_long_only_pf.value,
+        btc_ma_short_only_pf.value,
+        eth_ma_long_only_pf.value,
+        eth_ma_short_only_pf.value,
+        btc_psar_long_only_pf.value,
+        btc_psar_short_only_pf.value,
+        eth_psar_long_only_pf.value,
+        eth_psar_short_only_pf.value,
+        btc_eth_pf_long_short_blend.value,
+        btc_eth_pf_long_only_blend.value,
+        btc_eth_pf_short_only_blend.value
+    ], axis=1, keys=[
+        "BTC MACD Long",
+        "BTC MACD Short",
+        "ETH MACD Long",
+        "ETH MACD Short",
+        "BTC BBands Long",
+        "BTC BBands Short",
+        "ETH BBands Long",
+        "ETH BBands Short",
+        "BTC RSI Divergence",
+        "BTC MA Long",
+        "BTC MA Short",
+        "ETH MA Long",
+        "ETH MA Short",
+        "BTC PSAR Long",
+        "BTC PSAR Short",
+        "ETH PSAR Long",
+        "ETH PSAR Short",
+        "Long Short Blend",
+        "Long Only Blend",
+        "Short Only Blend"
+    ])
+
+    # Save portfolio values to CSV
+    portfolio_values.to_csv("portfolio_values.csv")
+
 if __name__ == "__main__":
     main()
