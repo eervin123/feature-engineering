@@ -1128,6 +1128,53 @@ def main():
         "Long Only Blend",
         "Short Only Blend"
     ])
+    # Create a DataFrame with trade records for all strategies
+    trade_records = pd.concat([
+        btc_macd_long_only_pf.trades.records_readable,
+        btc_macd_short_only_pf.trades.records_readable,
+        eth_macd_long_only_pf.trades.records_readable,
+        eth_macd_short_only_pf.trades.records_readable,
+        btc_bbands_long_only_pf.trades.records_readable,
+        btc_bbands_short_only_pf.trades.records_readable,
+        eth_bbands_long_only_pf.trades.records_readable,
+        eth_bbands_short_only_pf.trades.records_readable,
+        btc_rsi_divergence_pf_long.trades.records_readable,
+        btc_ma_long_only_pf.trades.records_readable,
+        btc_ma_short_only_pf.trades.records_readable,
+        eth_ma_long_only_pf.trades.records_readable,
+        eth_ma_short_only_pf.trades.records_readable,
+        btc_psar_long_only_pf.trades.records_readable,
+        btc_psar_short_only_pf.trades.records_readable,
+        eth_psar_long_only_pf.trades.records_readable,
+        eth_psar_short_only_pf.trades.records_readable,
+        btc_eth_pf_long_short_blend.trades.records_readable,
+        btc_eth_pf_long_only_blend.trades.records_readable,
+        btc_eth_pf_short_only_blend.trades.records_readable
+    ], keys=[
+        "BTC MACD Long",
+        "BTC MACD Short", 
+        "ETH MACD Long",
+        "ETH MACD Short",
+        "BTC BBands Long",
+        "BTC BBands Short",
+        "ETH BBands Long",
+        "ETH BBands Short",
+        "BTC RSI Divergence",
+        "BTC MA Long",
+        "BTC MA Short",
+        "ETH MA Long",
+        "ETH MA Short",
+        "BTC PSAR Long",
+        "BTC PSAR Short",
+        "ETH PSAR Long",
+        "ETH PSAR Short",
+        "Long Short Blend",
+        "Long Only Blend",
+        "Short Only Blend"
+    ])
+
+    # Save trade records to CSV
+    trade_records.to_csv("trade_records.csv")
 
     # Save portfolio values to CSV
     portfolio_values.to_csv("portfolio_values.csv")
