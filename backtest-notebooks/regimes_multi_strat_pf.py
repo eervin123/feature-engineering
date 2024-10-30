@@ -670,65 +670,65 @@ def main():
         eth_1h = data.resample("1H").data["ETHUSDT"]
         return btc_1h, btc_daily, eth_1h, eth_daily
     
-    # btc_1h, btc_daily, eth_1h, eth_daily = load_binance_data("data/m1_data.h5")
+    btc_1h, btc_daily, eth_1h, eth_daily = load_binance_data("data/m1_data.h5")
     
-    def load_coinbase_data(data_path):
-        """
-        Load and process Coinbase data from a CSV file.
+    # def load_coinbase_data(data_path):
+    #     """
+    #     Load and process Coinbase data from a CSV file.
         
-        Parameters:
-        data_path (str): Path to the CSV file containing Coinbase data
+    #     Parameters:
+    #     data_path (str): Path to the CSV file containing Coinbase data
         
-        Returns:
-        tuple: (btc_1h, btc_daily) or (eth_1h, eth_daily) depending on the input file
-        """
-        # Read the CSV file
-        data = pd.read_csv(data_path)
+    #     Returns:
+    #     tuple: (btc_1h, btc_daily) or (eth_1h, eth_daily) depending on the input file
+    #     """
+    #     # Read the CSV file
+    #     data = pd.read_csv(data_path)
         
-        # Convert timestamp to datetime
-        data['time_period_start'] = pd.to_datetime(data['time_period_start'])
-        data.set_index('time_period_start', inplace=True)
+    #     # Convert timestamp to datetime
+    #     data['time_period_start'] = pd.to_datetime(data['time_period_start'])
+    #     data.set_index('time_period_start', inplace=True)
         
-        # Rename columns to match expected format
-        data = data.rename(columns={
-            'price_open': 'Open',
-            'price_high': 'High',
-            'price_low': 'Low',
-            'price_close': 'Close',
-            'volume_traded': 'Volume'
-        })
+    #     # Rename columns to match expected format
+    #     data = data.rename(columns={
+    #         'price_open': 'Open',
+    #         'price_high': 'High',
+    #         'price_low': 'Low',
+    #         'price_close': 'Close',
+    #         'volume_traded': 'Volume'
+    #     })
         
-        # Keep only the columns we need
-        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+    #     # Keep only the columns we need
+    #     data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
         
-        # Create separate DataFrames for BTC and ETH (assuming two separate CSV files)
-        if 'btc' in data_path.lower():
-            btc_data = data
-            btc_1h = btc_data.copy()  # Already in hourly format
-            btc_daily = btc_data.resample('1D').agg({
-                'Open': 'first',
-                'High': 'max',
-                'Low': 'min',
-                'Close': 'last',
-                'Volume': 'sum'
-            })
-            btc_daily['Return'] = btc_daily['Close'].pct_change()
-            return btc_1h, btc_daily
-        else:  # ETH data
-            eth_data = data
-            eth_1h = eth_data.copy()  # Already in hourly format
-            eth_daily = eth_data.resample('1D').agg({
-                'Open': 'first',
-                'High': 'max',
-                'Low': 'min',
-                'Close': 'last',
-                'Volume': 'sum'
-            })
-            eth_daily['Return'] = eth_daily['Close'].pct_change()
-            return eth_1h, eth_daily
+    #     # Create separate DataFrames for BTC and ETH (assuming two separate CSV files)
+    #     if 'btc' in data_path.lower():
+    #         btc_data = data
+    #         btc_1h = btc_data.copy()  # Already in hourly format
+    #         btc_daily = btc_data.resample('1D').agg({
+    #             'Open': 'first',
+    #             'High': 'max',
+    #             'Low': 'min',
+    #             'Close': 'last',
+    #             'Volume': 'sum'
+    #         })
+    #         btc_daily['Return'] = btc_daily['Close'].pct_change()
+    #         return btc_1h, btc_daily
+    #     else:  # ETH data
+    #         eth_data = data
+    #         eth_1h = eth_data.copy()  # Already in hourly format
+    #         eth_daily = eth_data.resample('1D').agg({
+    #             'Open': 'first',
+    #             'High': 'max',
+    #             'Low': 'min',
+    #             'Close': 'last',
+    #             'Volume': 'sum'
+    #         })
+    #         eth_daily['Return'] = eth_daily['Close'].pct_change()
+    #         return eth_1h, eth_daily
 
-    btc_1h, btc_daily = load_coinbase_data("data/coinbase_btc_usd_201512_201812.csv")
-    eth_1h, eth_daily = load_coinbase_data("data/coinbase_eth_usd_201606_201812.csv")
+    # btc_1h, btc_daily = load_coinbase_data("data/coinbase_btc_usd_201512_201812.csv")
+    # eth_1h, eth_daily = load_coinbase_data("data/coinbase_eth_usd_201606_201812.csv")
     
     # Set up the RegimeIndicator
     RegimeIndicator = vbt.IndicatorFactory(
