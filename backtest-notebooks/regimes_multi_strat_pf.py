@@ -661,7 +661,7 @@ def run_psar_strategy(
 def main():
     # Get the data
     def load_binance_data(data_path):
-        data = vbt.BinanceData.from_hdf(data_path)
+        data = vbt.BinanceData.load(data_path)
         btc_1h = data.resample("1H").data["BTCUSDT"]
         btc_daily = data.resample("1D").data["BTCUSDT"]
         btc_daily["Return"] = btc_daily["Close"].pct_change()
@@ -670,7 +670,7 @@ def main():
         eth_1h = data.resample("1H").data["ETHUSDT"]
         return btc_1h, btc_daily, eth_1h, eth_daily
     
-    btc_1h, btc_daily, eth_1h, eth_daily = load_binance_data("data/m1_data.h5")
+    btc_1h, btc_daily, eth_1h, eth_daily = load_binance_data("data/m1_data.pkl")
     
     # def load_coinbase_data(data_path):
     #     """
