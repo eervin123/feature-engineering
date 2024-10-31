@@ -375,6 +375,7 @@ def run_ma_strategy(
     fast_ma: int,
     slow_ma: int,
     direction: str = "long",
+    fees: float = 0.001,
 ):
     """
     Run a moving average strategy on a given symbol's OHLCV data.
@@ -417,12 +418,14 @@ def run_ma_strategy(
             close=symbol_ohlcv_df.Close,
             entries=long_entries,
             exits=long_exits,
+            fees=fees,
         )
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df.Close,
             short_entries=short_entries,
             short_exits=short_exits,
+            fees=fees,
         )
 
     return pf
