@@ -444,16 +444,16 @@ def main():
 
     # Define strategy weights
     strategy_weights = {
-        "BBands": 0.3,  # 30% to Bollinger Bands strategies
-        "MA": 0.3,  # 30% to Moving Average strategies
-        "MACD": 0.2,  # 20% to MACD strategies
+        "BBands": 0.1,  # 30% to Bollinger Bands strategies
+        "MA": 0.5,  # 30% to Moving Average strategies
+        "MACD": 0.1,  # 20% to MACD strategies
         "RSI": 0.1,  # 10% to RSI strategies
-        "PSAR": 0.1,  # 10% to PSAR strategies
+        "PSAR": 0.2,  # 10% to PSAR strategies
     }
 
     asset_weights = {
-        "BTC": 0.5,  # 50% to BTC strategies
-        "ETH": 0.5,  # 50% to ETH strategies
+        "BTC": 0.4,  # 50% to BTC strategies
+        "ETH": 0.6,  # 50% to ETH strategies
     }
 
     # Build allocation array
@@ -480,8 +480,8 @@ def main():
     print("\n=== Overall Portfolio Performance ===")
     print(trimmed_portfolio.stats())
 
-    # Create visualization with subplots
-    fig = vbt.make_subplots(
+    # Create visualization with subplots for portfolio overview
+    portfolio_fig = vbt.make_subplots(
         rows=3,
         cols=1,
         shared_xaxes=True,
@@ -491,23 +491,24 @@ def main():
     # Plot cumulative returns using trimmed portfolio
     cum_returns_fig = trimmed_portfolio.plot_cum_returns()
     for trace in cum_returns_fig.data:
-        fig.add_trace(trace, row=1, col=1)
+        portfolio_fig.add_trace(trace, row=1, col=1)
 
     # Plot asset allocations using trimmed portfolio
     allocations_fig = trimmed_portfolio.plot_allocations()
     for trace in allocations_fig.data:
-        fig.add_trace(trace, row=2, col=1)
+        portfolio_fig.add_trace(trace, row=2, col=1)
 
     # Plot asset value using trimmed portfolio
     asset_value_fig = trimmed_portfolio.plot_asset_value()
     for trace in asset_value_fig.data:
-        fig.add_trace(trace, row=3, col=1)
+        portfolio_fig.add_trace(trace, row=3, col=1)
 
-    # Update layout
-    fig.update_layout(
+    # Update layout for portfolio overview
+    portfolio_fig.update_layout(
         height=1200,
         width=1000,
         showlegend=True,
+        title="Portfolio Overview",
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -517,8 +518,8 @@ def main():
         )
     )
 
-    # Show the combined figure
-    fig.show()
+    # Show the combined portfolio figure
+    portfolio_fig.show()
 
     print("\n=== Individual Strategy Performance ===")
     stats_df = combine_stats(strategies, start_date=warmup_end)
