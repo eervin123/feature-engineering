@@ -571,6 +571,7 @@ def main():
     stats_df = combine_stats(strategies, start_date=warmup_end)
     pd.set_option('display.max_columns', None)
     print(stats_df)
+    stats_df.to_csv('strategy_stats.csv')
 
     # Create figure for individual strategy performance
     n_strategies = len(strategies)
