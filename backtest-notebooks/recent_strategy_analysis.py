@@ -236,6 +236,44 @@ def combine_stats(strategies, start_date=None):
     # Transpose so strategies are rows and metrics are columns
     return combined_stats.T
 
+def get_allocation_table(portfolio, strategy_names=None):
+    """
+    Extract allocation data from portfolio and format it as a readable DataFrame.
+    
+    Parameters:
+    portfolio: vbt.Portfolio object
+    strategy_names: List of strategy names in the same order as portfolio columns
+    
+    Returns:
+    pd.DataFrame: DataFrame with timestamps as index and strategy allocations as columns
+    """
+    # Get allocation data
+    allocations = portfolio.allocations
+    
+    # Convert to DataFrame with strategy names
+    if strategy_names is None:
+        # Default to numbered columns if no names provided
+        strategy_names = [f"Strategy {i}" for i in range(len(portfolio.wrapper.columns))]
+    
+    alloc_df = pd.DataFrame(
+        allocations.values,
+        index=allocations.index,
+        columns=strategy_names
+    )
+    
+    # Format index to datetime with readable format
+    alloc_df.index = alloc_df.index.strftime('%Y-%m-%d %H:%M')
+    
+    # Round values to 3 decimal places
+    alloc_df = alloc_df.round(3)
+    
+    # Only keep rows where allocations change
+    alloc_df = alloc_df[alloc_df.ne(alloc_df.shift()).any(axis=1)]
+    
+    # Add row sums as a check (should all be 1.0)
+    alloc_df['Total'] = alloc_df.sum(axis=1).round(3)
+    
+    return alloc_df
 
 def main():
     # Load recent data
@@ -479,6 +517,14 @@ def main():
 
     print("\n=== Overall Portfolio Performance ===")
     print(trimmed_portfolio.stats())
+
+    print("\n=== Portfolio Allocations ===")
+    alloc_table = get_allocation_table(trimmed_portfolio, strategy_names=list(strategies.keys()))
+    print("\nAllocation changes over time:")
+    print(alloc_table)
+    
+    # Save to CSV
+    alloc_table.to_csv('portfolio_allocations.csv')
 
     # Create visualization with subplots for portfolio overview
     portfolio_fig = vbt.make_subplots(
