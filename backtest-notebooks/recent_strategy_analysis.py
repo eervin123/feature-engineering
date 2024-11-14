@@ -490,8 +490,8 @@ def main():
     }
 
     asset_weights = {
-        "BTC": 0.4,  # 50% to BTC strategies
-        "ETH": 0.6,  # 50% to ETH strategies
+        "BTC": 0.6,  # 60% to BTC strategies
+        "ETH": 0.4,  # 40% to ETH strategies
     }
 
     # Build allocation array

@@ -298,7 +298,7 @@ def run_bbands_strategy(
     bb_window: int = 14,
     bb_alpha: float = 2,
     atr_window: int = 14,
-    atr_multiplier: int = 10,  # @GRANT YOU CAN CHANGE THIS
+    atr_multiplier: int = 5,  # @GRANT YOU CAN CHANGE THIS
 ):
     """
     Run a Bollinger Bands strategy on a given symbol's OHLCV data.
@@ -349,6 +349,9 @@ def run_bbands_strategy(
     if direction == "long":
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df["Close"],
+            open=symbol_ohlcv_df["Open"],
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
             entries=long_entries,
             exits=regime_exits,  # Exit when leaving allowed regimes
             fees=fees,
@@ -359,6 +362,9 @@ def run_bbands_strategy(
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df["Close"],
+            open=symbol_ohlcv_df["Open"],
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
             short_entries=short_entries,
             short_exits=regime_exits,  # Exit when leaving allowed regimes
             fees=fees,
@@ -416,6 +422,9 @@ def run_ma_strategy(
     if direction == "long":
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df.Close,
+            open=symbol_ohlcv_df.Open,
+            high=symbol_ohlcv_df.High,
+            low=symbol_ohlcv_df.Low,
             entries=long_entries,
             exits=long_exits,
             fees=fees,
@@ -423,6 +432,9 @@ def run_ma_strategy(
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df.Close,
+            open=symbol_ohlcv_df.Open,
+            high=symbol_ohlcv_df.High,
+            low=symbol_ohlcv_df.Low,
             short_entries=short_entries,
             short_exits=short_exits,
             fees=fees,
@@ -503,6 +515,9 @@ def run_rsi_divergence_strategy(
     if direction == "long":
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df['Close'],
+            open=symbol_ohlcv_df['Open'],
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
             entries=entries,
             exits=regime_exits,  # Exit when leaving allowed regimes
             sl_stop=long_sl_stop,
@@ -513,6 +528,9 @@ def run_rsi_divergence_strategy(
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df['Close'],
+            open=symbol_ohlcv_df['Open'],
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
             short_entries=short_entries,
             short_exits=regime_exits,  # Exit when leaving allowed regimes
             sl_stop=short_sl_stop,
@@ -584,6 +602,9 @@ def run_macd_divergence_strategy(
     if direction == "long":
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df['Close'],
+            open=symbol_ohlcv_df['Open'],
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
             entries=entries,
             exits=exits,
             fees=fees,
@@ -592,6 +613,9 @@ def run_macd_divergence_strategy(
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df['Close'],
+            open=symbol_ohlcv_df['Open'],
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
             short_entries=entries,
             short_exits=exits,
             fees=fees,
@@ -645,6 +669,9 @@ def run_psar_strategy(
     if direction == "long":
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df["Close"],
+            open=symbol_ohlcv_df["Open"],
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
             entries=long_entries,
             exits=long_exits,
             fees=fees,
@@ -653,11 +680,99 @@ def run_psar_strategy(
     else:
         pf = vbt.PF.from_signals(
             close=symbol_ohlcv_df["Close"],
+            open=symbol_ohlcv_df["Open"],
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
             short_entries=short_entries,
             short_exits=short_exits,
             fees=fees,
             delta_format="target",
         )
+    return pf
+
+def mean_reversion_strategy(symbol_ohlcv_df, regime_data, allowed_regimes, direction="long", bb_window=200, bb_alpha=0.5, timeframe_1='12H', timeframe_2='24H', atr_window=30, atr_multiplier=5.0):
+    """
+    Run a mean reversion strategy on a given symbol's OHLCV data.
+
+    Parameters:
+    symbol_ohlcv_df (pd.DataFrame): OHLCV data for the symbol.
+    regime_data (pd.Series): Market regime data.
+    allowed_regimes (list): List of allowed market regimes for the strategy.
+    direction (str): Direction of the strategy ('long' or 'short').
+    bb_window (int): Window size for Bollinger Bands.
+    bb_alpha (float): Number of standard deviations for Bollinger Bands.
+    timeframe_1 (str): First timeframe for Bollinger Bands calculation.
+    timeframe_2 (str): Second timeframe for Bollinger Bands calculation.
+    atr_window (int): Window size for ATR calculation.
+    atr_multiplier (float): Multiplier for ATR to set stop loss and take profit levels.
+    """
+    
+    # Convert to vbt.BinanceData
+    data = vbt.BinanceData.from_data(symbol_ohlcv_df)
+    
+    bbands_tf1 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_1)
+    bbands_tf2 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_2)
+    
+    # Calculate ATR
+    atr = vbt.ATR.run(data.high, data.low, data.close, window=atr_window).atr
+    
+    # Generate long and short entry conditions
+    long_entries = (
+        (data.close < bbands_tf2.middleband) &
+        (data.close < bbands_tf1.lowerband)
+    ) | (
+        (data.close > bbands_tf2.lowerband) &
+        (data.close < bbands_tf1.lowerband)
+    )
+    
+    short_entries = (
+        (data.close > bbands_tf2.middleband) &
+        (data.close > bbands_tf1.upperband)
+    ) | (
+        (data.close < bbands_tf2.upperband) &
+        (data.close > bbands_tf1.upperband)
+    )
+
+    # Ensure we're only trading in allowed regimes
+    allowed_regime_mask = regime_data.isin(allowed_regimes)
+    long_entries = long_entries & allowed_regime_mask
+    short_entries = short_entries & allowed_regime_mask
+    
+    # Exit when leaving allowed regimes
+    regime_change_exits = allowed_regime_mask.shift(1) & ~allowed_regime_mask
+    
+    # Create the portfolio based on the direction parameter
+    if direction == "long":
+        sl_stop = data.close - atr_multiplier * atr
+        tp_stop = data.close + atr_multiplier * atr
+        pf = vbt.Portfolio.from_signals(
+            close=data.close,
+            open=data.open,
+            high=data.high,
+            low=data.low,
+            entries=long_entries,
+            exits=regime_change_exits | short_entries,
+            sl_stop=sl_stop,
+            tp_stop=tp_stop,
+            init_cash=10000,
+            fees=0.001
+        )
+    else:  # short
+        sl_stop = data.close + atr_multiplier * atr
+        tp_stop = data.close - atr_multiplier * atr
+        pf = vbt.Portfolio.from_signals(
+            close=data.close,
+            open=data.open,
+            high=data.high,
+            low=data.low,
+            short_entries=short_entries,
+            short_exits=regime_change_exits | long_entries,
+            sl_stop=sl_stop,
+            tp_stop=tp_stop,
+            init_cash=10000,
+            fees=0.001
+        )
+    
     return pf
 
 ################ Main #########################
@@ -935,6 +1050,35 @@ def main():
         max_af=0.05,
     )
     
+    # Run the mean reversion strategy for BTC and ETH
+    btc_mean_reversion_long_pf = mean_reversion_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=[3,4],  # non-trending regimes
+        direction="long"
+    )
+    
+    eth_mean_reversion_long_pf = mean_reversion_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=[3,4],  # non-trending regimes
+        direction="long"
+    )
+    
+    btc_mean_reversion_short_pf = mean_reversion_strategy(
+        btc_1h,
+        btc_aligned_regime_data,
+        allowed_regimes=[3,4],  # non-trending regimes
+        direction="short"
+    )
+    
+    eth_mean_reversion_short_pf = mean_reversion_strategy(
+        eth_1h,
+        eth_aligned_regime_data,
+        allowed_regimes=[3,4],  # non-trending regimes
+        direction="short"
+    )
+
     # Now we can run the portfolio on the combined dataframe
     btc_eth_pf_long_short_blend = vbt.Portfolio.column_stack(
         [
@@ -955,10 +1099,14 @@ def main():
             eth_psar_long_only_pf,
             btc_psar_short_only_pf,
             eth_psar_short_only_pf,
+            btc_mean_reversion_long_pf,
+            btc_mean_reversion_short_pf,
+            eth_mean_reversion_long_pf,
+            eth_mean_reversion_short_pf,
         ],
         cash_sharing=True,
         group_by=True,
-        init_cash=1700,  # Adjusted for the number of strategies
+        init_cash=2100,  # Adjusted for the number of strategies
     )
     btc_eth_pf_long_only_blend = vbt.Portfolio.column_stack(
         [
@@ -971,10 +1119,12 @@ def main():
             eth_macd_long_only_pf,
             btc_psar_long_only_pf,
             eth_psar_long_only_pf,
+            btc_mean_reversion_long_pf,
+            eth_mean_reversion_long_pf,
         ],
         cash_sharing=True,
         group_by=True,
-        init_cash=900,  # 9 times the initial capital because we are using 9 strategies
+        init_cash=1100,  # Adjusted for 11 strategies
     )
     btc_eth_pf_short_only_blend = vbt.Portfolio.column_stack(
         [
@@ -986,10 +1136,12 @@ def main():
             eth_macd_short_only_pf,
             btc_psar_short_only_pf,
             eth_psar_short_only_pf,
+            btc_mean_reversion_short_pf,
+            eth_mean_reversion_short_pf,
         ],
         cash_sharing=True,
         group_by=True,
-        init_cash=800,  # 8 times the initial capital because we are using 8 strategies
+        init_cash=1000,  # Adjusted for 10 strategies
     )
 
     # Build concatenated stats for individual strategies
@@ -1012,13 +1164,18 @@ def main():
             btc_psar_short_only_pf.stats(),
             eth_psar_long_only_pf.stats(),
             eth_psar_short_only_pf.stats(),
+            btc_mean_reversion_long_pf.stats(),
+            btc_mean_reversion_short_pf.stats(),
+            eth_mean_reversion_long_pf.stats(),
+            eth_mean_reversion_short_pf.stats(),
         ],
         axis=1,
         keys=[
             "BTC MACD Long", "BTC MACD Short", "ETH MACD Long", "ETH MACD Short",
             "BTC BBands Long", "BTC BBands Short", "ETH BBands Long", "ETH BBands Short", "BTC RSI Divergence",
             "BTC MA Long", "BTC MA Short", "ETH MA Long", "ETH MA Short",
-            "BTC PSAR Long", "BTC PSAR Short", "ETH PSAR Long", "ETH PSAR Short"
+            "BTC PSAR Long", "BTC PSAR Short", "ETH PSAR Long", "ETH PSAR Short",
+            "BTC Mean Rev Long", "BTC Mean Rev Short", "ETH Mean Rev Long", "ETH Mean Rev Short",
         ]
     )
     individual_stats.to_csv("individual_strategy_stats.csv")
@@ -1106,6 +1263,10 @@ def main():
         btc_psar_short_only_pf.value,
         eth_psar_long_only_pf.value,
         eth_psar_short_only_pf.value,
+        btc_mean_reversion_long_pf.value,
+        btc_mean_reversion_short_pf.value,
+        eth_mean_reversion_long_pf.value,
+        eth_mean_reversion_short_pf.value,
         btc_eth_pf_long_short_blend.value,
         btc_eth_pf_long_only_blend.value,
         btc_eth_pf_short_only_blend.value
@@ -1127,6 +1288,10 @@ def main():
         "BTC PSAR Short",
         "ETH PSAR Long",
         "ETH PSAR Short",
+        "BTC Mean Rev Long",
+        "BTC Mean Rev Short",
+        "ETH Mean Rev Long",
+        "ETH Mean Rev Short",
         "Long Short Blend",
         "Long Only Blend",
         "Short Only Blend"
@@ -1150,6 +1315,10 @@ def main():
         btc_psar_short_only_pf.trades.records_readable,
         eth_psar_long_only_pf.trades.records_readable,
         eth_psar_short_only_pf.trades.records_readable,
+        btc_mean_reversion_long_pf.trades.records_readable,
+        btc_mean_reversion_short_pf.trades.records_readable,
+        eth_mean_reversion_long_pf.trades.records_readable,
+        eth_mean_reversion_short_pf.trades.records_readable,
         btc_eth_pf_long_short_blend.trades.records_readable,
         btc_eth_pf_long_only_blend.trades.records_readable,
         btc_eth_pf_short_only_blend.trades.records_readable
@@ -1171,6 +1340,10 @@ def main():
         "BTC PSAR Short",
         "ETH PSAR Long",
         "ETH PSAR Short",
+        "BTC Mean Rev Long",
+        "BTC Mean Rev Short",
+        "ETH Mean Rev Long",
+        "ETH Mean Rev Short",
         "Long Short Blend",
         "Long Only Blend",
         "Short Only Blend"

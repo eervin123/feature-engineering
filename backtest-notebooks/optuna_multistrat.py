@@ -89,11 +89,35 @@ btc_aligned_regime_data = btc_hourly_regime_data.reindex(btc_1h.index, method="f
 eth_aligned_regime_data = eth_hourly_regime_data.reindex(eth_1h.index, method="ffill")
 
 
-def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_data, allowed_regimes, n_trials=500):
+def validate_timeframe_params(tf1_list, tf2_list):
+    """Validate that timeframe lists have no overlap and tf2 values are larger than tf1."""
+    # Convert timeframe strings to hours
+    def to_hours(tf):
+        if isinstance(tf, (int, float)):
+            return tf
+        num = int(''.join(filter(str.isdigit, tf)))
+        unit = ''.join(filter(str.isalpha, tf)).upper()
+        if unit == 'H':
+            return num
+        elif unit == 'D':
+            return num * 24
+        else:
+            raise ValueError(f"Unsupported timeframe unit: {unit}")
+
+    # Get the maximum value from tf1_list and minimum value from tf2_list
+    max_tf1 = max(to_hours(tf) for tf in tf1_list)
+    min_tf2 = min(to_hours(tf) for tf in tf2_list)
+    
+    if min_tf2 <= max_tf1:
+        raise ValueError("All timeframe_2 values must be larger than timeframe_1 values")
+
+def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_data, allowed_regimes, n_trials=1000):
+    # Add validation for timeframe parameters if they exist
+    if 'timeframe_1' in strategy_params and 'timeframe_2' in strategy_params:
+        validate_timeframe_params(strategy_params['timeframe_1'], strategy_params['timeframe_2'])
+    
     def objective(trial):
         params = {}
-        timeframe_order = ['1h', '4H', '8H', '12H', '24H', '48H', '72H', '1W']
-        
         for k, v in strategy_params.items():
             if isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], (int, float)):
                 if isinstance(v[0], int):
@@ -101,18 +125,7 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
                 else:
                     params[k] = trial.suggest_float(k, v[0], v[1])
             elif isinstance(v, list):
-                if k == 'timeframe_1':
-                    params[k] = trial.suggest_categorical(k, v)
-                elif k == 'timeframe_2':
-                    # Only suggest timeframes that are greater than timeframe_1
-                    tf1_index = timeframe_order.index(params['timeframe_1'])
-                    valid_tf2 = [tf for tf in v if timeframe_order.index(tf) > tf1_index]
-                    if not valid_tf2:
-                        # If there are no valid options for timeframe_2, skip this trial
-                        return float('inf')
-                    params[k] = trial.suggest_categorical(k, valid_tf2)
-                else:
-                    params[k] = trial.suggest_categorical(k, v)
+                params[k] = trial.suggest_categorical(k, v)
             else:
                 params[k] = v
 
@@ -123,8 +136,14 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
             **params
         )
 
-        # We're minimizing the negative of the total return
-        return -pf.total_return
+        # Optimization objective - can be changed to different metrics:
+        # - pf.total_return (maximize total returns)
+        # - pf.sharpe_ratio (maximize risk-adjusted returns)
+        # - pf.calmar_ratio (maximize return/max drawdown)
+        # - pf.omega_ratio (maximize probability weighted ratio of gains vs losses)
+        # objective = pf.total_return
+        objective = (pf.trades.count()*0.20) * pf.total_return # 20% of trades * total return lower weight on trades but still want to include trades as part of optimization
+        return float('inf') if pd.isna(objective) else -objective  # Return inf for invalid strategies
 
     sampler = TPESampler(n_startup_trials=10, seed=42)
     pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=25, interval_steps=10)
@@ -136,7 +155,7 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
     )
 
     def early_stopping_callback(study, trial):
-        if study.best_trial.number + 100 < trial.number:
+        if study.best_trial.number + 200 < trial.number:
             study.stop()
 
     study.optimize(objective, n_trials=n_trials, callbacks=[early_stopping_callback])
@@ -162,15 +181,17 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
 bbands_params = {
     "bb_window": (5, 300),
     "bb_alpha": (0.5, 4.0),
+    "use_sl_tp": [True, False],
     "atr_window": (5, 50),
     "atr_multiplier": (0.5, 10.0),
     "direction": ["long", "short"],
 }
 
 ma_params = {
-    "fast_ma": (3, 100),
-    "slow_ma": (10, 500),
+    "fast_ma": (15, 200),    
+    "slow_ma": (100, 500),
     "direction": ["long", "short"],
+    "use_sl_tp": [False],
     "atr_window": (5, 50),
     "atr_multiplier": (0.5, 10.0),
 }
@@ -179,6 +200,7 @@ rsi_params = {
     "rsi_window": (5, 50),
     "rsi_threshold": (10, 90),
     "lookback_window": (5, 100),
+    "use_sl_tp": [True, False],
     "atr_window": (5, 50),
     "atr_multiplier": (0.5, 10.0),
     "direction": ["long", "short"],
@@ -189,6 +211,7 @@ macd_params = {
     "slow_window": (10, 300),
     "signal_window": (5, 50),
     "direction": ["long", "short"],
+    "use_sl_tp": [True, False],
     "atr_window": (5, 50),
     "atr_multiplier": (0.5, 10.0),
 }
@@ -198,6 +221,7 @@ psar_params = {
     "af_increment": (0.01, 0.1),
     "max_af": (0.1, 0.5),
     "direction": ["long", "short"],
+    "use_sl_tp": [True, False],
     "atr_window": (5, 50),
     "atr_multiplier": (0.5, 10.0),
 }
@@ -206,6 +230,7 @@ rsi_mean_reversion_params = {
     "rsi_window": (5, 200),
     "rsi_lower": (20, 40),
     "rsi_upper": (60, 80),
+    "use_sl_tp": [True, False],
     "atr_window": (5, 100),
     "atr_multiplier": (0.5, 10.0),
     "direction": ["long", "short"],
@@ -214,9 +239,10 @@ rsi_mean_reversion_params = {
 mean_reversion_params = {
     'bb_window': (5, 300),
     'bb_alpha': (0.5, 4.0),
-    'timeframe_1': ['1h', '4H', '8H', '12H'],
-    'timeframe_2': ['24H', '48H', '72H', '1W'],
+    'timeframe_1': ['4H', '8H', '12H'],  # Back to using string lists
+    'timeframe_2': ['16H', '24H', '32H', '48H', '72H'],  # Back to using string lists
     'direction': ['long', 'short'],
+    'use_sl_tp': [True, False],
     'atr_window': (5, 50),
     'atr_multiplier': (0.5, 10.0),
 }
@@ -226,103 +252,82 @@ def run_rsi_mean_reversion_strategy(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
     allowed_regimes: list,
-    direction: str = "long",  # or 'short'
+    direction: str = "long",
     fees: float = 0.001,
     rsi_window: int = 14,
     rsi_lower: int = 30,
     rsi_upper: int = 70,
+    use_sl_tp: bool = True,
     atr_window: int = 14,
     atr_multiplier: int = 3,
 ):
-    """
-    Run an RSI mean reversion strategy on a given symbol's OHLCV data.
-
-    Parameters:
-    symbol_ohlcv_df (pd.DataFrame): OHLCV data for the symbol.
-    regime_data (pd.Series): Market regime data.
-    allowed_regimes (list): List of allowed market regimes for the strategy.
-    direction (str): Direction of the strategy ('long' or 'short').
-    fees (float): Transaction fees.
-    rsi_window (int): Window size for RSI.
-    rsi_lower (int): Lower threshold for RSI.
-    rsi_upper (int): Upper threshold for RSI.
-    atr_window (int): Window size for Average True Range (ATR).
-    atr_multiplier (int): Multiplier for ATR to set stop loss and take profit levels.
-
-    Returns:
-    vbt.Portfolio: Portfolio object containing the strategy results.
-    """
-    # Calculate RSI and ATR
     rsi = vbt.RSI.run(close=symbol_ohlcv_df["Close"], window=rsi_window)
-    atr = vbt.ATR.run(
-        high=symbol_ohlcv_df["High"],
-        low=symbol_ohlcv_df["Low"],
-        close=symbol_ohlcv_df["Close"],
-        window=atr_window,
-    )
-
-    # Determine long and short entries
+    
+    # Determine entries
     long_entries = (rsi.rsi < rsi_lower) & (regime_data.isin(allowed_regimes))
     short_entries = (rsi.rsi > rsi_upper) & (regime_data.isin(allowed_regimes))
-
-    # Create exit signals when leaving allowed regimes
     regime_exits = ~regime_data.isin(allowed_regimes)
     
-    # Create and return the portfolio
-    if direction == "long":
+    pf_kwargs = {
+        'close': symbol_ohlcv_df["Close"],
+        'fees': fees,
+    }
+
+    if use_sl_tp:
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
+            close=symbol_ohlcv_df["Close"],
+            window=atr_window,
+        ).atr
         
-        long_sl_stop = symbol_ohlcv_df["Close"] - atr_multiplier * atr.atr
-        long_tp_stop = symbol_ohlcv_df["Close"] + atr_multiplier * atr.atr
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df["Close"],
-            entries=long_entries,
-            exits=regime_exits,  # Exit when leaving allowed regimes
-            fees=fees,
-            sl_stop=long_sl_stop,
-            tp_stop=long_tp_stop,
-            delta_format="target",
-        )
+        if direction == "long":
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df["Close"] - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df["Close"] + atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+        else:
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df["Close"] + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df["Close"] - atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+
+    if direction == "long":
+        pf_kwargs.update({
+            'entries': long_entries,
+            'exits': regime_exits
+        })
     else:
-        short_sl_stop = symbol_ohlcv_df["Close"] + atr_multiplier * atr.atr
-        short_tp_stop = symbol_ohlcv_df["Close"] - atr_multiplier * atr.atr
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df["Close"],
-            short_entries=short_entries,
-            short_exits=regime_exits,  # Exit when leaving allowed regimes
-            fees=fees,
-            sl_stop=short_sl_stop,
-            tp_stop=short_tp_stop,
-            delta_format="target",
-        )
-    return pf
+        pf_kwargs.update({
+            'short_entries': short_entries,
+            'short_exits': regime_exits
+        })
 
-def mean_reversion_strategy(symbol_ohlcv_df, regime_data, allowed_regimes, direction="long", bb_window=21, bb_alpha=2.0, timeframe_1='4H', timeframe_2='24H', atr_window=14, atr_multiplier=3.0, **kwargs):
-    """
-    Run a mean reversion strategy on a given symbol's OHLCV data.
+    return vbt.PF.from_signals(**pf_kwargs)
 
-    Parameters:
-    symbol_ohlcv_df (pd.DataFrame): OHLCV data for the symbol.
-    regime_data (pd.Series): Market regime data.
-    allowed_regimes (list): List of allowed market regimes for the strategy.
-    direction (str): Direction of the strategy ('long' or 'short').
-    bb_window (int): Window size for Bollinger Bands.
-    bb_alpha (float): Number of standard deviations for Bollinger Bands.
-    timeframe_1 (str): First timeframe for Bollinger Bands calculation.
-    timeframe_2 (str): Second timeframe for Bollinger Bands calculation.
-    atr_window (int): Window size for ATR calculation.
-    atr_multiplier (float): Multiplier for ATR to set stop loss and take profit levels.
-    """
+def mean_reversion_strategy(
+    symbol_ohlcv_df,
+    regime_data,
+    allowed_regimes,
+    direction="long",
+    bb_window=21,
+    bb_alpha=2.0,
+    timeframe_1='4H',
+    timeframe_2='24H',
+    use_sl_tp: bool = True,
+    atr_window=14,
+    atr_multiplier=3.0,
+    **kwargs
+):
     
-    # Convert to vbt.BinanceData
     data = vbt.BinanceData.from_data(symbol_ohlcv_df)
     
     bbands_tf1 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_1)
     bbands_tf2 = vbt.talib("BBANDS").run(data.close, timeperiod=bb_window, nbdevup=bb_alpha, nbdevdn=bb_alpha, timeframe=timeframe_2)
     
-    # Calculate ATR
-    atr = vbt.ATR.run(data.high, data.low, data.close, window=atr_window).atr
-    
-    # Generate long and short entry conditions
+    # Generate entry conditions
     long_entries = (
         (data.close < bbands_tf2.middleband) &
         (data.close < bbands_tf1.lowerband)
@@ -339,49 +344,52 @@ def mean_reversion_strategy(symbol_ohlcv_df, regime_data, allowed_regimes, direc
         (data.close > bbands_tf1.upperband)
     )
 
-    # Ensure we're only trading in allowed regimes
     allowed_regime_mask = regime_data.isin(allowed_regimes)
     long_entries = long_entries & allowed_regime_mask
     short_entries = short_entries & allowed_regime_mask
-    
-    # Exit when leaving allowed regimes
     regime_change_exits = allowed_regime_mask.shift(1) & ~allowed_regime_mask
-    
-    # Create the portfolio based on the direction parameter
+
+    pf_kwargs = {
+        'close': data.close,
+        'init_cash': 10000,
+        'fees': 0.001
+    }
+
+    if use_sl_tp:
+        atr = vbt.ATR.run(data.high, data.low, data.close, window=atr_window).atr
+        
+        if direction == "long":
+            pf_kwargs.update({
+                'sl_stop': data.close - atr_multiplier * atr,
+                'tp_stop': data.close + atr_multiplier * atr
+            })
+        else:
+            pf_kwargs.update({
+                'sl_stop': data.close + atr_multiplier * atr,
+                'tp_stop': data.close - atr_multiplier * atr
+            })
+
     if direction == "long":
-        sl_stop = data.close - atr_multiplier * atr
-        tp_stop = data.close + atr_multiplier * atr
-        pf = vbt.Portfolio.from_signals(
-            close=data.close,
-            entries=long_entries,
-            exits=regime_change_exits | short_entries,
-            sl_stop=sl_stop,
-            tp_stop=tp_stop,
-            init_cash=10000,
-            fees=0.001
-        )
-    else:  # short
-        sl_stop = data.close + atr_multiplier * atr
-        tp_stop = data.close - atr_multiplier * atr
-        pf = vbt.Portfolio.from_signals(
-            close=data.close,
-            short_entries=short_entries,
-            short_exits=regime_change_exits | long_entries,
-            sl_stop=sl_stop,
-            tp_stop=tp_stop,
-            init_cash=10000,
-            fees=0.001
-        )
-    
-    return pf
+        pf_kwargs.update({
+            'entries': long_entries,
+            'exits': regime_change_exits | short_entries
+        })
+    else:
+        pf_kwargs.update({
+            'short_entries': short_entries,
+            'short_exits': regime_change_exits | long_entries
+        })
+
+    return vbt.Portfolio.from_signals(**pf_kwargs)
 
 def run_ma_strategy_with_stops(
     symbol_ohlcv_df: pd.DataFrame,
     regime_data: pd.Series,
     allowed_regimes: list,
-    fast_ma: int,
-    slow_ma: int,
+    fast_ma: int = 21,
+    slow_ma: int = 55,
     direction: str = "long",
+    use_sl_tp: bool = True,
     atr_window: int = 14,
     atr_multiplier: float = 2.0,
     fees: float = 0.001,
@@ -390,49 +398,65 @@ def run_ma_strategy_with_stops(
     slow_ma = vbt.MA.run(symbol_ohlcv_df.Close, window=slow_ma).ma
 
     long_entries = fast_ma > slow_ma
+    long_exits = fast_ma < slow_ma
     short_entries = fast_ma < slow_ma
+    short_exits = fast_ma > slow_ma
 
     # Add regime filter
     long_entries = long_entries & regime_data.isin(allowed_regimes)
     short_entries = short_entries & regime_data.isin(allowed_regimes)
+    long_regime_exits = ~regime_data.isin(allowed_regimes)
+    short_regime_exits = ~regime_data.isin(allowed_regimes)
 
-    # Calculate ATR
-    atr = vbt.ATR.run(
-        high=symbol_ohlcv_df['High'],
-        low=symbol_ohlcv_df['Low'],
-        close=symbol_ohlcv_df['Close'],
-        window=atr_window
-    ).atr
+    # Combine regime exits with other exit conditions
+    long_exits = long_exits | long_regime_exits
+    short_exits = short_exits | short_regime_exits
 
-    # Calculate stop loss and take profit levels
-    long_sl_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
-    long_tp_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_sl_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_tp_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
+    pf_kwargs = {
+        'close': symbol_ohlcv_df.Close,
+        'open': symbol_ohlcv_df.Open,
+        'high': symbol_ohlcv_df.High,
+        'low': symbol_ohlcv_df.Low,
+        'fees': fees,
+    }
 
-    # Run the simulation
-    if direction == "long":
-        pf = vbt.PF.from_signals(
+    if use_sl_tp:
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df.High,
+            low=symbol_ohlcv_df.Low,
             close=symbol_ohlcv_df.Close,
-            entries=long_entries,
-            exits=~regime_data.isin(allowed_regimes),
-            sl_stop=long_sl_stop,
-            tp_stop=long_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
+            window=atr_window
+        ).atr
+
+        if direction == "long":
+            pf_kwargs.update({
+                'entries': long_entries,
+                'exits': long_exits,
+                'sl_stop': symbol_ohlcv_df.Close - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df.Close + atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+        else:
+            pf_kwargs.update({
+                'short_entries': short_entries,
+                'short_exits': short_exits,
+                'sl_stop': symbol_ohlcv_df.Close + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df.Close - atr_multiplier * atr,
+                'delta_format': 'target'
+            })
     else:
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df.Close,
-            short_entries=short_entries,
-            short_exits=~regime_data.isin(allowed_regimes),
-            sl_stop=short_sl_stop,
-            tp_stop=short_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
+        if direction == "long":
+            pf_kwargs.update({
+                'entries': long_entries,
+                'exits': long_exits
+            })
+        else:
+            pf_kwargs.update({
+                'short_entries': short_entries,
+                'short_exits': short_exits
+            })
 
-    return pf
+    return vbt.PF.from_signals(**pf_kwargs)
 
 def run_macd_divergence_strategy_with_stops(
     symbol_ohlcv_df: pd.DataFrame,
@@ -441,10 +465,11 @@ def run_macd_divergence_strategy_with_stops(
     fast_window: int = 12,
     slow_window: int = 26,
     signal_window: int = 9,
+    direction: str = "long",
+    use_sl_tp: bool = True,
     atr_window: int = 14,
     atr_multiplier: float = 2.0,
     fees: float = 0.001,
-    direction: str = "long",  # or 'short'
 ):
     # Calculate MACD
     macd = vbt.MACD.run(
@@ -463,42 +488,44 @@ def run_macd_divergence_strategy_with_stops(
     # Apply regime filter
     entries = entries & regime_data.isin(allowed_regimes)
 
-    # Calculate ATR
-    atr = vbt.ATR.run(
-        high=symbol_ohlcv_df['High'],
-        low=symbol_ohlcv_df['Low'],
-        close=symbol_ohlcv_df['Close'],
-        window=atr_window
-    ).atr
+    pf_kwargs = {
+        'close': symbol_ohlcv_df['Close'],
+        'fees': fees,
+    }
 
-    # Calculate stop loss and take profit levels
-    long_sl_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
-    long_tp_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_sl_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_tp_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
+    if use_sl_tp:
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
+            close=symbol_ohlcv_df['Close'],
+            window=atr_window
+        ).atr
 
-    # Create and return the portfolio
+        if direction == "long":
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+        else:
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+
     if direction == "long":
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            entries=entries,
-            exits=~regime_data.isin(allowed_regimes),
-            sl_stop=long_sl_stop,
-            tp_stop=long_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
+        pf_kwargs.update({
+            'entries': entries,
+            'exits': ~regime_data.isin(allowed_regimes)
+        })
     else:
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            short_entries=entries,
-            short_exits=~regime_data.isin(allowed_regimes),
-            sl_stop=short_sl_stop,
-            tp_stop=short_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
-    return pf
+        pf_kwargs.update({
+            'short_entries': entries,
+            'short_exits': ~regime_data.isin(allowed_regimes)
+        })
+
+    return vbt.PF.from_signals(**pf_kwargs)
 
 def run_rsi_divergence_strategy_with_stops(
     symbol_ohlcv_df: pd.DataFrame,
@@ -507,21 +534,14 @@ def run_rsi_divergence_strategy_with_stops(
     rsi_window: int = 14,
     rsi_threshold: int = 30,
     lookback_window: int = 25,
+    direction: str = "long",
+    use_sl_tp: bool = True,
     atr_window: int = 14,
     atr_multiplier: float = 2.0,
     fees: float = 0.001,
-    direction: str = "long",  # or 'short'
 ):
     # Calculate RSI
     rsi = vbt.RSI.run(symbol_ohlcv_df['Close'], window=rsi_window).rsi
-
-    # Calculate ATR
-    atr = vbt.ATR.run(
-        high=symbol_ohlcv_df['High'],
-        low=symbol_ohlcv_df['Low'],
-        close=symbol_ohlcv_df['Close'],
-        window=atr_window
-    ).atr
 
     # Calculate rolling minimum for price and RSI
     price_min = symbol_ohlcv_df['Close'].rolling(window=lookback_window).min()
@@ -530,47 +550,57 @@ def run_rsi_divergence_strategy_with_stops(
     # Generate entry signals
     if direction == "long":
         entries = (
-            (symbol_ohlcv_df['Close'] == price_min) &  # New price low
-            (rsi < rsi_threshold) &  # RSI below threshold
-            (rsi > rsi_min) &  # RSI not at new low
-            (regime_data.isin(allowed_regimes))  # In allowed regime
+            (symbol_ohlcv_df['Close'] == price_min) &
+            (rsi < rsi_threshold) &
+            (rsi > rsi_min) &
+            (regime_data.isin(allowed_regimes))
         )
     else:  # short
         entries = (
-            (symbol_ohlcv_df['Close'] == symbol_ohlcv_df['Close'].rolling(window=lookback_window).max()) &  # New price high
-            (rsi > 100 - rsi_threshold) &  # RSI above inverse threshold
-            (rsi < rsi.rolling(window=lookback_window).max()) &  # RSI not at new high
-            (regime_data.isin(allowed_regimes))  # In allowed regime
+            (symbol_ohlcv_df['Close'] == symbol_ohlcv_df['Close'].rolling(window=lookback_window).max()) &
+            (rsi > 100 - rsi_threshold) &
+            (rsi < rsi.rolling(window=lookback_window).max()) &
+            (regime_data.isin(allowed_regimes))
         )
 
-    # Calculate stop loss and take profit levels
-    long_sl_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
-    long_tp_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_sl_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_tp_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
+    pf_kwargs = {
+        'close': symbol_ohlcv_df['Close'],
+        'fees': fees,
+    }
 
-    # Create and return the portfolio
+    if use_sl_tp:
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
+            close=symbol_ohlcv_df['Close'],
+            window=atr_window
+        ).atr
+
+        if direction == "long":
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+        else:
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+
     if direction == "long":
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            entries=entries,
-            exits=~regime_data.isin(allowed_regimes),
-            sl_stop=long_sl_stop,
-            tp_stop=long_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
+        pf_kwargs.update({
+            'entries': entries,
+            'exits': ~regime_data.isin(allowed_regimes)
+        })
     else:
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            short_entries=entries,
-            short_exits=~regime_data.isin(allowed_regimes),
-            sl_stop=short_sl_stop,
-            tp_stop=short_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
-    return pf
+        pf_kwargs.update({
+            'short_entries': entries,
+            'short_exits': ~regime_data.isin(allowed_regimes)
+        })
+
+    return vbt.PF.from_signals(**pf_kwargs)
 
 def run_psar_strategy_with_stops(
     symbol_ohlcv_df: pd.DataFrame,
@@ -580,11 +610,12 @@ def run_psar_strategy_with_stops(
     af_increment: float = 0.02,
     max_af: float = 0.2,
     direction: str = "long",
+    use_sl_tp: bool = True,
     atr_window: int = 14,
     atr_multiplier: float = 2.0,
     fees: float = 0.001,
 ):
-    # Calculate PSAR using the custom function
+    # Calculate PSAR
     long, short, _, _, _, _ = psar_nb_with_next(
         symbol_ohlcv_df['High'].values,
         symbol_ohlcv_df['Low'].values,
@@ -603,42 +634,122 @@ def run_psar_strategy_with_stops(
     # Apply regime filter
     entries = entries & regime_data.isin(allowed_regimes)
 
-    # Calculate ATR
-    atr = vbt.ATR.run(
-        high=symbol_ohlcv_df['High'],
-        low=symbol_ohlcv_df['Low'],
-        close=symbol_ohlcv_df['Close'],
-        window=atr_window
-    ).atr
+    pf_kwargs = {
+        'close': symbol_ohlcv_df['Close'],
+        'fees': fees,
+    }
 
-    # Calculate stop loss and take profit levels
-    long_sl_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
-    long_tp_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_sl_stop = symbol_ohlcv_df['Close'] + atr_multiplier * atr
-    short_tp_stop = symbol_ohlcv_df['Close'] - atr_multiplier * atr
+    if use_sl_tp:
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df['High'],
+            low=symbol_ohlcv_df['Low'],
+            close=symbol_ohlcv_df['Close'],
+            window=atr_window
+        ).atr
 
-    # Create and return the portfolio
+        if direction == "long":
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+        else:
+            pf_kwargs.update({
+                'sl_stop': symbol_ohlcv_df['Close'] + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df['Close'] - atr_multiplier * atr,
+                'delta_format': 'target'
+            })
+
     if direction == "long":
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            entries=entries,
-            exits=~regime_data.isin(allowed_regimes),
-            sl_stop=long_sl_stop,
-            tp_stop=long_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
+        pf_kwargs.update({
+            'entries': entries,
+            'exits': ~regime_data.isin(allowed_regimes)
+        })
     else:
-        pf = vbt.PF.from_signals(
-            close=symbol_ohlcv_df['Close'],
-            short_entries=entries,
-            short_exits=~regime_data.isin(allowed_regimes),
-            sl_stop=short_sl_stop,
-            tp_stop=short_tp_stop,
-            fees=fees,
-            delta_format='target',
-        )
-    return pf
+        pf_kwargs.update({
+            'short_entries': entries,
+            'short_exits': ~regime_data.isin(allowed_regimes)
+        })
+
+    return vbt.PF.from_signals(**pf_kwargs)
+
+def run_bbands_strategy_with_stops(
+    symbol_ohlcv_df: pd.DataFrame,
+    regime_data: pd.Series,
+    allowed_regimes: list,
+    direction: str = "long",
+    fees: float = 0.001,
+    bb_window: int = 14,
+    bb_alpha: float = 2,
+    use_sl_tp: bool = True,
+    atr_window: int = 14,
+    atr_multiplier: int = 5,
+):
+    # Calculate Bollinger Bands
+    bbands_run = vbt.BBANDS.run(
+        close=symbol_ohlcv_df["Close"], 
+        window=bb_window, 
+        alpha=bb_alpha
+    )
+
+    # Determine entries
+    long_entries = (symbol_ohlcv_df["Close"] < bbands_run.lower) & (
+        regime_data.isin(allowed_regimes)
+    )
+    short_entries = (symbol_ohlcv_df["Close"] > bbands_run.upper) & (
+        regime_data.isin(allowed_regimes)
+    )
+
+    # Create exit signals when leaving allowed regimes
+    regime_exits = ~regime_data.isin(allowed_regimes)
+
+    # Common portfolio parameters
+    pf_kwargs = {
+        'close': symbol_ohlcv_df["Close"],
+        'open': symbol_ohlcv_df["Open"],
+        'high': symbol_ohlcv_df["High"],
+        'low': symbol_ohlcv_df["Low"],
+        'fees': fees,
+    }
+
+    if use_sl_tp:
+        # Calculate ATR and stops
+        atr = vbt.ATR.run(
+            high=symbol_ohlcv_df["High"],
+            low=symbol_ohlcv_df["Low"],
+            close=symbol_ohlcv_df["Close"],
+            window=atr_window,
+        ).atr
+
+        if direction == "long":
+            pf_kwargs.update({
+                'entries': long_entries,
+                'exits': regime_exits,
+                'sl_stop': symbol_ohlcv_df["Close"] - atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df["Close"] + atr_multiplier * atr,
+                'delta_format': "target",
+            })
+        else:
+            pf_kwargs.update({
+                'short_entries': short_entries,
+                'short_exits': regime_exits,
+                'sl_stop': symbol_ohlcv_df["Close"] + atr_multiplier * atr,
+                'tp_stop': symbol_ohlcv_df["Close"] - atr_multiplier * atr,
+                'delta_format': "target",
+            })
+    else:
+        if direction == "long":
+            pf_kwargs.update({
+                'entries': long_entries,
+                'exits': regime_exits,
+            })
+        else:
+            pf_kwargs.update({
+                'short_entries': short_entries,
+                'short_exits': regime_exits,
+            })
+
+    return vbt.PF.from_signals(**pf_kwargs)
 
 def create_stats(name, symbol, direction, pf, params):
     return {
@@ -659,8 +770,8 @@ def create_stats(name, symbol, direction, pf, params):
         **params
     }
 
-def optimize_wrapper(name, func, params):
-    print(f"Optimizing {name}...")
+def optimize_wrapper(name, func, params, target_regimes):
+    print(f"Optimizing {name} for regimes {target_regimes}...")
     
     results = []
     for symbol, ohlcv_df, regime_data in [("BTC", btc_1h, btc_aligned_regime_data), 
@@ -668,12 +779,12 @@ def optimize_wrapper(name, func, params):
         # Optimize for long
         long_params = params.copy()
         long_params['direction'] = ['long']
-        best_long_params, long_pf, _ = optimize_strategy(func, long_params, ohlcv_df, regime_data, [3, 4])
+        best_long_params, long_pf, _ = optimize_strategy(func, long_params, ohlcv_df, regime_data, target_regimes)
         
         # Optimize for short
         short_params = params.copy()
         short_params['direction'] = ['short']
-        best_short_params, short_pf, _ = optimize_strategy(func, short_params, ohlcv_df, regime_data, [3, 4])
+        best_short_params, short_pf, _ = optimize_strategy(func, short_params, ohlcv_df, regime_data, target_regimes)
         
         # Create stats for both
         long_stats = create_stats(name, symbol, "long", long_pf, best_long_params)
@@ -683,24 +794,32 @@ def optimize_wrapper(name, func, params):
     
     return results
 
-def run_optimized_strategies():
+def run_optimized_strategies(target_regimes):
     strategies = [
         ("Moving Average", run_ma_strategy_with_stops, ma_params),
         ("MACD Divergence", run_macd_divergence_strategy_with_stops, macd_params),
         ("RSI Divergence", run_rsi_divergence_strategy_with_stops, rsi_params),
-        ("Bollinger Bands", run_bbands_strategy, bbands_params),
+        ("Bollinger Bands", run_bbands_strategy_with_stops, bbands_params),
         ("Parabolic SAR", run_psar_strategy_with_stops, psar_params),
         ("RSI Mean Reversion", run_rsi_mean_reversion_strategy, rsi_mean_reversion_params),
         ("Mean Reversion", mean_reversion_strategy, mean_reversion_params),
     ]
 
-    results = Parallel(n_jobs=-1)(delayed(optimize_wrapper)(name, func, params) for name, func, params in strategies)
+    results = Parallel(n_jobs=-1)(delayed(optimize_wrapper)(name, func, params, target_regimes) 
+                                 for name, func, params in strategies)
     all_stats = [item for sublist in results for item in sublist]  # Flatten the stats
     return pd.DataFrame(all_stats)
 
 if __name__ == "__main__":
-    optimized_results = run_optimized_strategies()
-    optimized_results.to_csv("optimized_results.csv", index=False)
+    # Define target regimes for optimization
+    target_regimes = [3,4,5,6]  # Default regimes, can be modified here
+    
+    # You could also make it interactive:
+    # print("Available regimes: 1 (Bull), 2 (Bear), 3 (Range), 4 (Volatility), 5 (Bull Volatile), 6 (Bear Volatile)")
+    # target_regimes = [int(x) for x in input("Enter target regimes (space-separated numbers): ").split()]
+    
+    optimized_results = run_optimized_strategies(target_regimes)
+    optimized_results.to_csv(f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv", index=False)
     
     # Display results in formatted tables
     btc_results = optimized_results[optimized_results['Symbol'] == 'BTC']
@@ -712,10 +831,38 @@ if __name__ == "__main__":
     print("\nETH Results:")
     print(tabulate(eth_results.drop('Portfolio', axis=1), headers='keys', tablefmt='pipe', floatfmt='.4f'))
 
-    # Plot the performance for each strategy
-    for _, row in optimized_results.iterrows():
-        symbol = row['Symbol']
-        strategy = row['Strategy']
-        direction = row['Direction']
-        pf = row['Portfolio']
-        pf.plot(title=f"{symbol} - {strategy} ({direction.capitalize()})").show()
+    # Create subplot figure for all strategies
+    n_strategies = len(optimized_results)
+    n_cols = 4  # Number of columns in the grid
+    n_rows = (n_strategies + n_cols - 1) // n_cols  # Calculate required rows
+
+    # Create subplot layout
+    fig = vbt.make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.05,
+        subplot_titles=[f"{row['Symbol']} - {row['Strategy']}" for _, row in optimized_results.iterrows()]
+    )
+
+    # Plot each strategy's cumulative returns
+    for idx, row in optimized_results.iterrows():
+        row_idx = idx // n_cols + 1
+        col_idx = idx % n_cols + 1
+        
+        # Get cumulative returns plot
+        strategy_fig = row['Portfolio'].plot_cum_returns()
+        for trace in strategy_fig.data:
+            fig.add_trace(trace, row=row_idx, col=col_idx)
+
+    # Update layout
+    fig.update_layout(
+        height=300 * n_rows,  # Adjust height based on number of rows
+        width=1200,
+        showlegend=False,
+        title="Optimized Strategy Performance",
+    )
+
+    # Show the figure
+    fig.show()
