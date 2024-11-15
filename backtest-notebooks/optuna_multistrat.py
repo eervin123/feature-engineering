@@ -812,7 +812,7 @@ def run_optimized_strategies(target_regimes):
 
 if __name__ == "__main__":
     # Define target regimes for optimization
-    target_regimes = [3,4,5,6]  # Default regimes, can be modified here
+    target_regimes = [1,2]  # Default regimes, can be modified here
     
     # You could also make it interactive:
     # print("Available regimes: 1 (Bull), 2 (Bear), 3 (Range), 4 (Volatility), 5 (Bull Volatile), 6 (Bear Volatile)")
