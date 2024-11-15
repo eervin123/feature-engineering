@@ -136,20 +136,28 @@ def optimize_strategy(strategy_func, strategy_params, symbol_ohlcv_df, regime_da
             **params
         )
 
-        # Optimization objective - can be changed to different metrics:
-        # - pf.total_return (maximize total returns)
-        # - pf.sharpe_ratio (maximize risk-adjusted returns)
-        # - pf.calmar_ratio (maximize return/max drawdown)
-        # - pf.omega_ratio (maximize probability weighted ratio of gains vs losses)
-        # objective = pf.total_return
-        objective = (pf.trades.count()*0.20) * pf.total_return # 20% of trades * total return lower weight on trades but still want to include trades as part of optimization
-        return float('inf') if pd.isna(objective) else -objective  # Return inf for invalid strategies
+        # Objective function options to maximize:
+        
+        # Current objective: Balance between trade frequency and returns
+        # - Weights number of trades (20%) to avoid overfitting on few trades
+        objective = (pf.trades.count()*0.20) * pf.total_return
+        
+        # Alternative objectives to consider:
+        # pf.total_return              # Simple returns - good for pure performance
+        # pf.sharpe_ratio             # Returns/volatility - good for risk-adjusted performance
+        # pf.sortino_ratio            # Similar to Sharpe but only penalizes downside volatility
+        # pf.omega_ratio              # Probability weighted ratio of gains vs losses
+        # pf.trades.win_rate          # Pure win rate - but beware of small gains vs large losses
+        # pf.calmar_ratio             # Returns/max drawdown - good for drawdown-sensitive strategies
+        # pf.trades.profit_factor     # Gross profits/gross losses - good for consistent profitability
+        
+        return float('-inf') if pd.isna(objective) else objective  # Return -inf for invalid strategies
 
     sampler = TPESampler(n_startup_trials=10, seed=42)
     pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=25, interval_steps=10)
 
     study = optuna.create_study(
-        direction="minimize",
+        direction="maximize",
         sampler=sampler,
         pruner=pruner
     )
@@ -820,11 +828,16 @@ if __name__ == "__main__":
     
     optimized_results = run_optimized_strategies(target_regimes)
     
-    # Save to CSV without the Portfolio column
-    optimized_results.drop('Portfolio', axis=1).to_csv(
-        f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv", 
-        index=False
-    )
+    # Save to CSV with strategies as columns
+    csv_df = optimized_results.drop('Portfolio', axis=1).set_index(['Symbol', 'Strategy', 'Direction'])
+    csv_df = csv_df.unstack(['Strategy', 'Direction'])
+    csv_df.to_csv(f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv")
+    
+    # Alternative flatter structure
+    csv_df = optimized_results.drop('Portfolio', axis=1)
+    csv_df['Strategy'] = csv_df['Strategy'] + ' (' + csv_df['Direction'] + ')'
+    csv_df = csv_df.drop('Direction', axis=1).set_index(['Symbol', 'Strategy']).transpose()
+    csv_df.to_csv(f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv")
     
     # Display results in formatted tables
     btc_results = optimized_results[optimized_results['Symbol'] == 'BTC']
@@ -838,9 +851,53 @@ if __name__ == "__main__":
         # Move Symbol column to index if it exists
         if 'Symbol' in df.columns:
             df = df.drop('Symbol', axis=1)
+        
+        # Format numeric columns
+        format_dict = {
+            # Metrics
+            'Total Return': '{:.2f}',
+            'Sharpe Ratio': '{:.2f}',
+            'Sortino Ratio': '{:.2f}',
+            'Win Rate': '{:.2%}',
+            'Max Drawdown': '{:.2%}',
+            'Calmar Ratio': '{:.2f}',
+            'Omega Ratio': '{:.2f}',
+            'Profit Factor': '{:.2f}',
+            'Expectancy': '{:.2f}',
+            'Total Trades': '{:.0f}',
             
+            # Strategy Parameters
+            'fast_ma': '{:.0f}',
+            'slow_ma': '{:.0f}',
+            'atr_window': '{:.0f}',
+            'atr_multiplier': '{:.2f}',
+            'fast_window': '{:.0f}',
+            'slow_window': '{:.0f}',
+            'signal_window': '{:.0f}',
+            'rsi_window': '{:.0f}',
+            'rsi_threshold': '{:.0f}',
+            'lookback_window': '{:.0f}',
+            'bb_window': '{:.0f}',
+            'bb_alpha': '{:.2f}',
+            'af0': '{:.3f}',
+            'af_increment': '{:.3f}',
+            'max_af': '{:.3f}',
+            'rsi_lower': '{:.0f}',
+            'rsi_upper': '{:.0f}'
+        }
+        
         # Transpose the dataframe
         df = df.transpose()
+        
+        # Apply formatting
+        for col in df.columns:
+            for metric, fmt in format_dict.items():
+                if metric in df.index and not pd.isna(df.loc[metric, col]):
+                    try:
+                        df.loc[metric, col] = fmt.format(float(df.loc[metric, col]))
+                    except (ValueError, TypeError):
+                        # Keep original value if formatting fails
+                        pass
         
         return df
     
