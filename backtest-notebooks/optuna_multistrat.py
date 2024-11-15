@@ -820,7 +820,7 @@ def run_optimized_strategies(target_regimes):
 
 if __name__ == "__main__":
     # Define target regimes for optimization
-    target_regimes = [1,2]  # Default regimes, can be modified here
+    target_regimes = [4]  # Default regimes, can be modified here
     
     # You could also make it interactive:
     # print("Available regimes: 1 (Bull), 2 (Bear), 3 (Range), 4 (Volatility), 5 (Bull Volatile), 6 (Bear Volatile)")
@@ -855,7 +855,7 @@ if __name__ == "__main__":
         # Format numeric columns
         format_dict = {
             # Metrics
-            'Total Return': '{:.2f}',
+            'Total Return': '{:.2%}',  # Changed to percentage format
             'Sharpe Ratio': '{:.2f}',
             'Sortino Ratio': '{:.2f}',
             'Win Rate': '{:.2%}',
