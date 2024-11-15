@@ -819,17 +819,36 @@ if __name__ == "__main__":
     # target_regimes = [int(x) for x in input("Enter target regimes (space-separated numbers): ").split()]
     
     optimized_results = run_optimized_strategies(target_regimes)
-    optimized_results.to_csv(f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv", index=False)
+    
+    # Save to CSV without the Portfolio column
+    optimized_results.drop('Portfolio', axis=1).to_csv(
+        f"optimized_results_regimes_{'_'.join(map(str, target_regimes))}.csv", 
+        index=False
+    )
     
     # Display results in formatted tables
     btc_results = optimized_results[optimized_results['Symbol'] == 'BTC']
     eth_results = optimized_results[optimized_results['Symbol'] == 'ETH']
     
+    # Function to format results table
+    def format_results_table(df):
+        # Drop Portfolio column and set Strategy as index
+        df = df.drop('Portfolio', axis=1).set_index('Strategy')
+        
+        # Move Symbol column to index if it exists
+        if 'Symbol' in df.columns:
+            df = df.drop('Symbol', axis=1)
+            
+        # Transpose the dataframe
+        df = df.transpose()
+        
+        return df
+    
     print("BTC Results:")
-    print(tabulate(btc_results.drop('Portfolio', axis=1), headers='keys', tablefmt='pipe', floatfmt='.4f'))
+    print(tabulate(format_results_table(btc_results), headers='keys', tablefmt='pipe', floatfmt='.4f'))
     
     print("\nETH Results:")
-    print(tabulate(eth_results.drop('Portfolio', axis=1), headers='keys', tablefmt='pipe', floatfmt='.4f'))
+    print(tabulate(format_results_table(eth_results), headers='keys', tablefmt='pipe', floatfmt='.4f'))
 
     # Create subplot figure for all strategies
     n_strategies = len(optimized_results)
